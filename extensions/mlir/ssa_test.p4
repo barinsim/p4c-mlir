@@ -132,7 +132,7 @@ parser TopParser(packet_in b, out Parsed_packet p) {
         // }
     }
 
-    state parse_ipv4(/*packet fields*/, /*packet_in b#3*/) {
+    state parse_ipv4 {
         b.extract(p.ip);
         // p.ip.version#1, b#4 = b#3.extract(size); [sideEffect]
         // p.ip.ihl#1 = b.extract(size); [sideEffect]
@@ -150,7 +150,7 @@ parser TopParser(packet_in b, out Parsed_packet p) {
         // tmp#1 = ck#3.get() [noSideEffect]
         // verify(tmp#1 == 16w0, error.IPv4ChecksumError);
         // FALSE: reject(/*all fields of p*/ ???)
-        transition accept(/*packet fields*/, /*packet_in b#3*/);
+        transition accept;
     }
 
     /*

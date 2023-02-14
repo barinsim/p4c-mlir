@@ -10,6 +10,8 @@
 #include "lib/gc.h"
 #include "lib/log.h"
 
+#include "cfgBuilder.h"
+
 
 class BMV2Options : public CompilerOptions {
  public:
