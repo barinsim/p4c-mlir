@@ -17,8 +17,7 @@ struct BasicBlock {
     int id = nextId++;
 };
 
-std::string toString(const BasicBlock* bb, int indent, bool followSuccessors,
-                    std::unordered_set<const BasicBlock*>& visited);
+std::string toString(const BasicBlock* bb, int indent = 0);
 
 class CFGBuilder : public Inspector 
 {
@@ -64,11 +63,23 @@ class CFGBuilder : public Inspector
     bool preorder(const IR::Attribute*) override { return false; }
     bool preorder(const IR::StructField*) override { return false; }
     bool preorder(const IR::Type_StructLike*) override { return false; }
-    bool preorder(const IR::Type_StructLike*) override { return false; }
     
 };
 
 
+class CFGPrinter
+{
+ public:
+    std::string toString(const BasicBlock* entry, int indent = 0) const;
+
+ private:
+    void toStringImpl(const BasicBlock* bb, int indent,
+                            std::unordered_set<const BasicBlock*>& visited,
+                            std::ostream& os) const;
+    std::string toString(const IR::Node* node) const;
+    std::string getBlockIdentifier(const BasicBlock* bb) const;
+
+};
 
 
 } // namespace p4mlir

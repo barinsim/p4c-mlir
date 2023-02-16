@@ -46,72 +46,76 @@ bool CFGBuilder::preorder(const IR::IfStatement* ifStmt) {
 }
 
 void CFGBuilder::Builder::add(const IR::StatOrDecl* item) {
-    BUG_CHECK(curr, "");
+    CHECK_NULL(curr);
     curr->components.push_back(item);
 }
 
 void CFGBuilder::Builder::addSuccessor(const BasicBlock* succ) {
-    BUG_CHECK(curr, "");
+    CHECK_NULL(curr);
     curr->succs.push_back(succ);
 }
 
 void CFGBuilder::Builder::enterBasicBlock(BasicBlock* bb) {
-    BUG_CHECK(bb, "");
+    CHECK_NULL(curr);
     curr = bb; 
 }
 
-// TODO: Refactor the whole CFG printing into its own CFG class
-std::string toString(const BasicBlock* bb, int indent, bool followSuccessors,
-                     std::unordered_set<const BasicBlock*>& visited) {
-    auto bb_id = [](auto* bb) {
-        return std::string("bb_") + std::to_string(bb->id);
-    };
+std::string toString(const BasicBlock* bb, int indent) {
+    CFGPrinter p;
+    return p.toString(bb, indent);
+}
 
-    auto terminatorToString = [](const IR::StatOrDecl* term) -> std::string {
-        if (auto* ifstmt = term->to<IR::IfStatement>()) {
-            std::stringstream ss;
-            ss << "if ";
-            ifstmt->condition->dbprint(ss);
-            return ss.str();
-        }
-        if (auto* ret = term->to<IR::ReturnStatement>()) {
-            return std::string("return");
-        }
-        std::stringstream ss;
-        term->dbprint(ss);
-        return ss.str();
-    };
-
-    visited.insert(bb);
+std::string CFGPrinter::toString(const BasicBlock* entry, int indent) const {
+    CHECK_NULL(entry);
+    std::unordered_set<const BasicBlock*> visited;
     std::stringstream ss;
+    toStringImpl(entry, indent, visited, ss);
+    return ss.str();
+}
 
-    ss << indent_t(indent) << bb_id(bb) << ":" << '\n';
-    for (int i = 0; i < bb->components.size(); ++i) {
-        auto* item = bb->components.at(i);
-        if (i == bb->components.size() - 1) {
-            ss << indent_t(indent + 1) << terminatorToString(item);
-        } else {
-            ss << indent_t(indent + 1);
-            item->dbprint(ss);
-            ss << '\n';
-        }
-    }
-
-    std::for_each(bb->succs.begin(), bb->succs.end(), [&](auto* succ) {
-        ss << " " << bb_id(succ);
+void CFGPrinter::toStringImpl(const BasicBlock* bb, int indent,
+                                     std::unordered_set<const BasicBlock*>& visited,
+                                     std::ostream& os) const {
+    visited.insert(bb);
+    os << indent_t(indent) << getBlockIdentifier(bb);
+    std::for_each(bb->components.begin(), bb->components.end(), [&](auto* comp) {
+        os << '\n' << indent_t(indent + 1) << toString(comp);
     });
-
-    if (!followSuccessors) {
-        return ss.str();
+    if (!bb->succs.empty()) {
+        os << '\n' << indent_t(indent + 1) << "successors:";
+        std::for_each(bb->succs.begin(), bb->succs.end(), [&](auto* succ) {
+            os << " " << getBlockIdentifier(succ);
+        });
     }
-
+    bool willContinue = std::any_of(bb->succs.begin(), bb->succs.end(), [&](auto* succ) {
+        return !visited.count(succ);
+    });
+    if (willContinue) {
+        os << '\n' << '\n';
+    }
     std::for_each(bb->succs.begin(), bb->succs.end(), [&](auto* succ) {
         if (!visited.count(succ)) {
-            ss << '\n' << '\n' << toString(succ, indent, true, visited);
+            toStringImpl(succ, indent, visited, os);
         }
     });
+}
 
+std::string CFGPrinter::toString(const IR::Node* node) const {
+    CHECK_NULL(node);
+    std::stringstream ss;
+    if (auto* ifstmt = node->to<IR::IfStatement>()) {
+        ss << "if (";
+        ifstmt->condition->dbprint(ss);
+        ss << ")";
+        return ss.str();
+    }
+    node->dbprint(ss);
     return ss.str();
+}
+
+std::string CFGPrinter::getBlockIdentifier(const BasicBlock* bb) const {
+    CHECK_NULL(bb);
+    return std::string("bb^") + std::to_string(bb->id);
 }
 
 
