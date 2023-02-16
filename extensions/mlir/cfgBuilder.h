@@ -17,9 +17,8 @@ struct BasicBlock {
     int id = nextId++;
 };
 
-std::string toString(const BasicBlock* bb, int indent = 0, bool followSuccessors = true,
-                    std::unordered_set<const BasicBlock*> visited =
-                    std::unordered_set<const BasicBlock*>());
+std::string toString(const BasicBlock* bb, int indent, bool followSuccessors,
+                    std::unordered_set<const BasicBlock*>& visited);
 
 class CFGBuilder : public Inspector 
 {
@@ -47,17 +46,25 @@ class CFGBuilder : public Inspector
     }
     
     bool preorder(const IR::P4Action* action) override;
-    bool preorder(const IR::StatOrDecl* statOrDecl) override;
+    bool preorder(const IR::P4Control* control) override;
     bool preorder(const IR::IfStatement* ifStmt) override;
+    bool preorder(const IR::ReturnStatement* ret) override { b.add(ret); return true; }
+    bool preorder(const IR::AssignmentStatement* assign) override { b.add(assign); return true; }
+    bool preorder(const IR::MethodCallStatement* call) override { b.add(call); return true; }
 
     bool preorder(const IR::BlockStatement*) override {
         // Should 2 different scopes be in a single basic block?
         // Just ignore for now.
         return true;
     }
-    bool preorder(const IR::ParameterList*) override {
-        return false;
-    }
+    bool preorder(const IR::ParameterList*) override { return false; }
+    bool preorder(const IR::P4Table*) override { return false; }
+    bool preorder(const IR::Annotations*) override { return false; }
+    bool preorder(const IR::P4Parser*) override { return false; }
+    bool preorder(const IR::Attribute*) override { return false; }
+    bool preorder(const IR::StructField*) override { return false; }
+    bool preorder(const IR::Type_StructLike*) override { return false; }
+    bool preorder(const IR::Type_StructLike*) override { return false; }
     
 };
 

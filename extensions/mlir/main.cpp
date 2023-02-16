@@ -66,9 +66,10 @@ int main(int argc, char *const argv[]) {
     auto cfgBuilder = new p4mlir::CFGBuilder;
     program->apply(*cfgBuilder);
 
+    std::unordered_set<const p4mlir::BasicBlock*> visited;
     for (auto& [decl, bb] : cfgBuilder->getCFG()) {
         std::cout << decl->getName() << '\n';
-        std::cout << toString(bb, 1) << '\n' << std::endl;
+        std::cout << toString(bb, 1, true, visited) << '\n' << '\n';
     }
 
     return errorCount() != 0;
