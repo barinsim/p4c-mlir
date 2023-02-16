@@ -63,5 +63,13 @@ int main(int argc, char *const argv[]) {
     std::cout << "AFTER FRONTEND" << std::endl;
     dump(program);
 
+    auto cfgBuilder = new p4mlir::CFGBuilder;
+    program->apply(*cfgBuilder);
+
+    for (auto& [decl, bb] : cfgBuilder->getCFG()) {
+        std::cout << decl->getName() << '\n';
+        std::cout << toString(bb, 1) << '\n' << std::endl;
+    }
+
     return errorCount() != 0;
 }
