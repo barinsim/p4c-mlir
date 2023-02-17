@@ -46,17 +46,18 @@ bool CFGBuilder::preorder(const IR::IfStatement* ifStmt) {
 }
 
 void CFGBuilder::Builder::add(const IR::StatOrDecl* item) {
-    CHECK_NULL(curr);
+    CHECK_NULL(curr, item);
+    LOG3("CFGBuilder::add" << DBPrint::Brief << item);
     curr->components.push_back(item);
 }
 
 void CFGBuilder::Builder::addSuccessor(const BasicBlock* succ) {
-    CHECK_NULL(curr);
+    CHECK_NULL(curr, succ);
     curr->succs.push_back(succ);
 }
 
 void CFGBuilder::Builder::enterBasicBlock(BasicBlock* bb) {
-    CHECK_NULL(curr);
+    CHECK_NULL(bb);
     curr = bb; 
 }
 
@@ -74,8 +75,8 @@ std::string CFGPrinter::toString(const BasicBlock* entry, int indent) const {
 }
 
 void CFGPrinter::toStringImpl(const BasicBlock* bb, int indent,
-                                     std::unordered_set<const BasicBlock*>& visited,
-                                     std::ostream& os) const {
+                              std::unordered_set<const BasicBlock*>& visited,
+                              std::ostream& os) const {
     visited.insert(bb);
     os << indent_t(indent) << getBlockIdentifier(bb);
     std::for_each(bb->components.begin(), bb->components.end(), [&](auto* comp) {
@@ -102,13 +103,16 @@ void CFGPrinter::toStringImpl(const BasicBlock* bb, int indent,
 
 std::string CFGPrinter::toString(const IR::Node* node) const {
     CHECK_NULL(node);
-    std::stringstream ss;
     if (auto* ifstmt = node->to<IR::IfStatement>()) {
-        ss << "if (";
+        std::stringstream ss;
         ifstmt->condition->dbprint(ss);
-        ss << ")";
-        return ss.str();
+        std::string cond = ss.str();
+        if (!cond.empty() && cond.back() == ';') {
+            cond.pop_back();
+        }
+        return std::string("if (") + cond + ")";
     }
+    std::stringstream ss;
     node->dbprint(ss);
     return ss.str();
 }

@@ -19,15 +19,22 @@ limitations under the License.
 #ifndef _LIB_NULL_H_
 #define _LIB_NULL_H_
 
+#include <boost/preprocessor/seq/for_each_i.hpp>
+#include <boost/preprocessor/variadic/to_seq.hpp>
+
 #include "error.h"  // for BUG macro
 
 // Typical C contortions to transform something into a string
 #define LIB_STRINGIFY(x) #x
 #define LIB_TOSTRING(x) LIB_STRINGIFY(x)
 
-#define CHECK_NULL(a)                                                              \
-    do {                                                                           \
-        if ((a) == nullptr) BUG(__FILE__ ":" LIB_TOSTRING(__LINE__) ": Null " #a); \
+#define CHECK_1_NULL_IMPL(r, unused, idx, a)  \
+        if ((a) == nullptr) BUG(__FILE__ ":" LIB_TOSTRING(__LINE__) ": Null " #a);
+
+#define CHECK_NULL(...)                                                                       \
+    do {                                                                                      \
+        BOOST_PP_SEQ_FOR_EACH_I(CHECK_1_NULL_IMPL, %%, BOOST_PP_VARIADIC_TO_SEQ(__VA_ARGS__)) \
     } while (0)
 
 #endif /* _LIB_NULL_H_ */
+
