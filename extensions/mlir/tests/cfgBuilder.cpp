@@ -77,20 +77,17 @@ private:
 testing::AssertionResult fuzzyEq(CFGTestIntermediary&& a, CFGTestIntermediary&& b) {
     auto& ablocks = a.basicBlocks;
     auto& bblocks = b.basicBlocks;
-    while (!ablocks.empty()) {
-        auto& curr = ablocks.front();
-        bool success = false;
+    auto curr = a.basicBlocks.begin();
+    while (curr != ablocks.end()) {
+        auto next = std::next(curr);
         for (auto it = bblocks.begin(); it != bblocks.end(); ++it) {
-            if (curr == *it) {
-                success = true;
+            if (*curr == *it) {
                 bblocks.erase(it);
+                ablocks.erase(curr);
                 break;
             }
         }
-        if (!success) {
-            break;
-        }
-        ablocks.pop_front();
+        curr = next;
     }
     if (ablocks.empty() && bblocks.empty()) {
         return testing::AssertionSuccess();
@@ -110,9 +107,20 @@ testing::AssertionResult fuzzyEq(CFGTestIntermediary&& a, CFGTestIntermediary&& 
 
     return testing::AssertionFailure() << "\n"
                                        << "Not-matched in A:\n"
-                                       << toString(ablocks) << "\n\n"
+                                       << toString(ablocks) << "\n"
                                        << "Not-matched in B:\n"
                                        << toString(bblocks);
+}
+
+BasicBlock* getByName(const std::map<const IR::IDeclaration*, BasicBlock*>& cfg,
+                      const std::string& name) {
+    auto it = std::find_if(cfg.begin(), cfg.end(), [&](auto& p) {
+        return p.first->getName() == name;
+    });
+    if (it == cfg.end()) {
+        return nullptr;
+    }
+    return it->second;
 }
 
 // Checking if two graphs are equal is NP-i problem.
@@ -128,22 +136,32 @@ testing::AssertionResult fuzzyEq(CFGTestIntermediary&& a, CFGTestIntermediary&& 
 // bb^2
 //  f1 = hdr.f2;
 //  successors: bb^5 bb^6
-#define CFG_EXPECT_FUZZY_EQ(a, b)                                               \
-    do {                                                                        \
-        EXPECT_TRUE(fuzzyEq(CFGTestIntermediary(a), CFGTestIntermediary(b)));  \
+#define CFG_EXPECT_FUZZY_EQ(a, b)                                             \
+    do {                                                                      \
+        EXPECT_TRUE(fuzzyEq(CFGTestIntermediary(a), CFGTestIntermediary(b))); \
     } while (0)
-
-
 
 class CFGBuilder : public Test::P4CTest { };
 
 
-TEST_F(CFGBuilder, Test_CFG_of_simple_action) {
+TEST_F(CFGBuilder, Test_multiple_simple_actions) {
     std::string src = P4_SOURCE(R"(
         action foo() {
             hdr.f1 = 3;
             hdr.f2 = hdr.f3;
             hdr.f3 = 5;
+            test2.apply();
+            return;
+        }
+        action bar() {
+            hdr.f4 = hdr.f1;
+            test1.apply();
+            hdr.f5 = 3 + hdr.f2 + hdr.f5;
+        }
+        action baz() {
+            checksum.clear();
+            checksum.update(hdr.f4);
+            hdr.inner.f5 = checksum.get() + hdr.f1;
         }
     )");
     auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
@@ -153,17 +171,193 @@ TEST_F(CFGBuilder, Test_CFG_of_simple_action) {
     pgm->apply(*b);
     auto all = b->getCFG();
 
-    ASSERT_EQ(all.size(), 1);
-    auto& [decl, cfg] = *all.begin();
-    EXPECT_EQ(decl->getName(), "foo");
+    ASSERT_EQ(all.size(), 3);
+    auto* cfgFoo = getByName(all, "foo");
+    auto* cfgBar = getByName(all, "bar");
+    auto* cfgBaz = getByName(all, "baz");
+    ASSERT_TRUE(cfgFoo);
+    ASSERT_TRUE(cfgBar);
+    ASSERT_TRUE(cfgBaz);
 
-    CFG_EXPECT_FUZZY_EQ(cfg,
+    CFG_EXPECT_FUZZY_EQ(cfgFoo,
         R"(bb^1
             hdr.f1 = 3;
             hdr.f2 = hdr.f3;
             hdr.f3 = 5;
+            test2.apply();
+            return;
         )"
     );
+
+    CFG_EXPECT_FUZZY_EQ(cfgBar,
+        R"(bb^1
+            hdr.f4 = hdr.f1;
+            test1.apply();
+            hdr.f5 = 3 + hdr.f2 + hdr.f5;
+            return;
+        )"
+    );
+
+    CFG_EXPECT_FUZZY_EQ(cfgBaz,
+        R"(bb^1
+            checksum.clear();
+            checksum.update(hdr.f4);
+            hdr.inner.f5 = checksum.get() + hdr.f1;
+            return;
+        )"
+    );
+}
+
+
+TEST_F(CFGBuilder, Test_control_block_with_control_flow) {
+    std::string src = P4_SOURCE(R"(
+        struct Parsed_packet {}
+        struct InControl {}
+        struct OutControl {}
+        typedef bit<32>  IPv4Address;
+        typedef bit<9>  PortId;
+        control Pipe<H>(inout H headers,
+                in InControl inCtrl,
+                out OutControl outCtrl);
+        package Pipeline<H>(Pipe<H> p);
+        control TopPipe(inout Parsed_packet headers,
+                        in InControl inCtrl,
+                        out OutControl outCtrl) {
+            IPv4Address nextHop;
+
+            action Set_nhop(IPv4Address ipv4_dest, PortId port) {
+                nextHop = ipv4_dest;
+                headers.ip.ttl = headers.ip.ttl - 1;
+                outCtrl.outputPort = port;
+            }
+            table ipv4_match {
+                key = { headers.ip.dstAddr: lpm; }
+                actions = { NoAction; Set_nhop; }
+                size = 1024;
+                default_action = NoAction;
+            }
+            table check_ttl {
+                key = { headers.ip.ttl: exact; }
+                actions = { Almost_empty; NoAction; }
+                const default_action = NoAction;
+            }
+            table dmac {
+                key = { nextHop: exact; }
+                actions = { NoAction; Set_smac; }
+                size = 1024;
+                default_action = NoAction;
+            }
+            action Set_smac(IPv4Address smac) {
+                if (hdr.inner.port1 == hdr.inner.port2) {
+                    if (hdr.inner.port1 == 15) {
+                        hdr.inner.f1 = hdr.inner.f1 + 1;
+                    }
+                    if (hdr.inner.port1 + hdr.f1 == 13) {
+                        hdr.inner.f1 = hdr.f5;
+                    } else {
+                        hdr.inner.f1 = hdr.f5 + 1;
+                    }
+                }
+                headers.ethernet.srcAddr = smac;
+                if (hdr.f1 == 3) {
+                    return;
+                }
+            }
+            table smac {
+                key = { outCtrl.outputPort: exact; }
+                actions = { NoAction; Set_smac; }
+                size = 16;
+                default_action = NoAction;
+            }
+            action Empty() {}
+            action Almost_empty() { return; }
+            apply {
+                if (hdr.inner.f3 != 0) {
+                    NoAction();
+                    return;
+                }
+                ipv4_match.apply();
+                if (outCtrl.outputPort == 2) return;
+                check_ttl.apply();
+                if (outCtrl.outputPort == 3) {
+                    smac.apply();
+                    hdr.f1 = hdr.f2 + 3 + hdr.f4;
+                    return;
+                }
+                dmac.apply();
+                if (outCtrl.outputPort == hdr.inner.port) return;
+                smac.apply();
+            }
+        }
+        Pipeline(TopPipe()) main;
+    )");
+    auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
+    ASSERT_TRUE(pgm && ::errorCount() == 0);
+
+    auto b = new p4mlir::CFGBuilder;
+    pgm->apply(*b);
+    auto all = b->getCFG();
+
+    ASSERT_EQ(all.size(), 5);
+    auto* cfgNhop = getByName(all, "Set_nhop");
+    auto cfgSmac = getByName(all, "Set_smac");
+    auto* cfgEmpty = getByName(all, "Empty");
+    auto* cfgAlmostEmpty = getByName(all, "Almost_empty");
+    auto* cfgApply = getByName(all, "TopPipe");
+    ASSERT_TRUE(cfgNhop);
+    ASSERT_TRUE(cfgSmac);
+    ASSERT_TRUE(cfgEmpty);
+    ASSERT_TRUE(cfgAlmostEmpty);
+    ASSERT_TRUE(cfgApply);
+
+    CFG_EXPECT_FUZZY_EQ(cfgNhop,
+        R"(bb^1
+            nextHop = ipv4_dest;
+            headers.ip.ttl = headers.ip.ttl - 1;
+            outCtrl.outputPort = port;
+            return;
+        )"
+    );
+
+    CFG_EXPECT_FUZZY_EQ(cfgSmac,
+        R"(bb^1
+            if (hdr.inner.port1 == hdr.inner.port2)
+            successors: bb^2 bb^7
+
+           bb^2
+            if (hdr.inner.port1 == 15)
+            successors: bb^3 bb^4
+
+           bb^3
+            hdr.inner.f1 = hdr.inner.f1 + 1;
+            successors: bb^4
+
+           bb^4
+            if (hdr.inner.port1 + hdr.f1 == 13)
+            successors: bb^5 bb^6
+
+           bb^5
+            hdr.inner.f1 = hdr.f5;
+            successors: bb^7
+
+           bb^6
+            hdr.inner.f1 = hdr.f5 + 1;
+            successors: bb^7
+
+           bb^7
+            headers.ethernet.srcAddr = smac;
+            if (hdr.f1 == 3)
+            successors: bb^8 bb^9
+
+           bb^8
+            return;
+
+           bb^9
+            return;
+        )"
+    );
+
+    // TODO: Rest of the callables
 }
 
 

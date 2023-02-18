@@ -12,7 +12,7 @@ namespace p4mlir {
 
 struct BasicBlock {
     std::vector<const IR::StatOrDecl*> components;
-    std::vector<const BasicBlock*> succs;
+    std::vector<BasicBlock*> succs;
     static int nextId;
     int id = nextId++;
 };
@@ -33,7 +33,7 @@ class CFGBuilder : public Inspector
     public:
         std::map<const IR::IDeclaration*, BasicBlock*> callableToCFG;
         void add(const IR::StatOrDecl* item);
-        void addSuccessor(const BasicBlock* succ);
+        void addSuccessor(BasicBlock* succ);
         void enterBasicBlock(BasicBlock* bb);
     };
 
@@ -43,6 +43,12 @@ class CFGBuilder : public Inspector
         b = Builder();
         return Inspector::init_apply(node);
     }
+
+    // Canonicalizes the CFGs:
+    //  1. The last statement of a callable is a return statement
+    //  2. Block ending with return/exit has 0 successors
+    //  3. There are no empty basic blocks (0 components)
+    void end_apply(const IR::Node *) override;
     
     bool preorder(const IR::P4Action* action) override;
     bool preorder(const IR::P4Control* control) override;
@@ -67,18 +73,88 @@ class CFGBuilder : public Inspector
 };
 
 
+// TODO: reformat with CFGWalker
 class CFGPrinter
 {
  public:
     std::string toString(const BasicBlock* entry, int indent = 0) const;
+
+public:
+    static std::string makeBlockIdentifier(const BasicBlock* bb);
 
  private:
     void toStringImpl(const BasicBlock* bb, int indent,
                             std::unordered_set<const BasicBlock*>& visited,
                             std::ostream& os) const;
     std::string toString(const IR::Node* node) const;
-    std::string getBlockIdentifier(const BasicBlock* bb) const;
+};
 
+
+// Provides static methods for CFG inspecting/modifying
+class CFGWalker
+{
+ public:
+    template <typename Func>
+    static std::vector<BasicBlock*> collect(BasicBlock* entry, Func shouldCollect) {
+        std::vector<BasicBlock*> res;
+        forEachBlock(entry, [&res, &shouldCollect](BasicBlock* bb) {
+            if (shouldCollect(bb)) {
+                res.push_back(bb);
+            }
+        });
+        return res;
+    }
+
+    template <typename Func>
+    static void forEachBlock(BasicBlock* entry, Func func) {
+        std::unordered_set<const BasicBlock*> visited;
+        preorder(entry, visited, func);
+    }
+
+    template <typename Func>
+    static BasicBlock* erase(BasicBlock* entry, Func shouldErase) {
+        BasicBlock dummy;
+        dummy.succs.push_back(entry);
+        forEachBlock(&dummy, [&dummy, &shouldErase](BasicBlock* bb) {
+            if (shouldErase(bb) && bb != &dummy) {
+                return;
+            }
+            std::vector<BasicBlock*> newSuccs;
+            for (auto* succ : bb->succs) {
+                // We need to get over all of which should
+                // be erased to the first valid one
+                BasicBlock* ptr = succ;
+                while (ptr && shouldErase(ptr)) {
+                    BUG_CHECK(ptr->succs.size() <= 1,
+                              "Vertices with more than 1 succesor cannot be removed.");
+                    if (ptr->succs.empty()) {
+                        ptr = nullptr;
+                        continue;
+                    }
+                    ptr = ptr->succs.front();
+                }
+                if (ptr) {
+                    newSuccs.push_back(ptr);
+                }
+            }
+            bb->succs = newSuccs;
+        });
+        return dummy.succs.empty() ? nullptr : dummy.succs.front();
+    }
+
+ private:
+    template <typename Func>
+    static void preorder(BasicBlock* bb, std::unordered_set<const BasicBlock*>& visited, Func func) {
+        CHECK_NULL(bb);
+        if (visited.count(bb)) {
+            return;
+        }
+        visited.insert(bb);
+        func(bb);
+        for (auto* succ : bb->succs) {
+            preorder(succ, visited, func);
+        }
+    }
 };
 
 
