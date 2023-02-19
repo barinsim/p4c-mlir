@@ -12,7 +12,7 @@ namespace p4mlir::tests {
 
 // This class is used to load CFG either from string or entry BasicBlock
 // so we can fuzzy compare two instances of CFGs.
-struct CFGTestIntermediary
+struct TextCFG
 {
     struct BB {
         std::vector<std::string> lines;
@@ -22,8 +22,8 @@ struct CFGTestIntermediary
         }
     };
     std::list<BB> basicBlocks;
-    CFGTestIntermediary(const std::string& cfg) { initFromString(cfg); }
-    CFGTestIntermediary(const p4mlir::BasicBlock* entry) : CFGTestIntermediary(toString(entry)) {}
+    TextCFG(const std::string& cfg) { initFromString(cfg); }
+    TextCFG(const p4mlir::BasicBlock* entry) : TextCFG(toString(entry)) {}
 
 private:
     void initFromString(const std::string& cfg) {
@@ -74,7 +74,7 @@ private:
     }
 };
 
-testing::AssertionResult fuzzyEq(CFGTestIntermediary&& a, CFGTestIntermediary&& b) {
+testing::AssertionResult fuzzyEq(TextCFG&& a, TextCFG&& b) {
     auto& ablocks = a.basicBlocks;
     auto& bblocks = b.basicBlocks;
     auto curr = a.basicBlocks.begin();
@@ -138,7 +138,7 @@ BasicBlock* getByName(const std::map<const IR::IDeclaration*, BasicBlock*>& cfg,
 //  successors: bb^5 bb^6
 #define CFG_EXPECT_FUZZY_EQ(a, b)                                             \
     do {                                                                      \
-        EXPECT_TRUE(fuzzyEq(CFGTestIntermediary(a), CFGTestIntermediary(b))); \
+        EXPECT_TRUE(fuzzyEq(TextCFG(a), TextCFG(b))); \
     } while (0)
 
 class CFGBuilder : public Test::P4CTest { };
@@ -357,7 +357,60 @@ TEST_F(CFGBuilder, Test_control_block_with_control_flow) {
         )"
     );
 
-    // TODO: Rest of the callables
+    // We insert return statements at the end of actions
+    CFG_EXPECT_FUZZY_EQ(cfgEmpty,
+        R"(bb^1
+            return;
+        )"
+    );
+
+    CFG_EXPECT_FUZZY_EQ(cfgAlmostEmpty,
+        R"(bb^1
+            return;
+        )"
+    );
+
+    CFG_EXPECT_FUZZY_EQ(cfgApply,
+        R"(bb^1
+            if (hdr.inner.f3 != 0)
+            successors: bb^2 bb^3
+
+           bb^2
+            NoAction();
+            return;
+
+           bb^3
+            ipv4_match.apply();
+            if (outCtrl.outputPort == 2)
+            successors: bb^4 bb^5
+
+           bb^4
+            return;
+
+           bb^5
+            check_ttl.apply();
+            if (outCtrl.outputPort == 3)
+            successors: bb^6 bb^7
+
+           bb^6
+            smac.apply();
+            hdr.f1 = hdr.f2 + 3 + hdr.f4;
+            return;
+
+           bb^7
+            dmac.apply();
+            if (outCtrl.outputPort == hdr.inner.port)
+            successors: bb^8 bb^9
+
+           bb^8
+            return;
+
+           bb^9
+            smac.apply();
+            return;
+        )"
+    );
+
 }
 
 
