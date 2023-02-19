@@ -1,5 +1,6 @@
 #include "cfgBuilder.h"
 
+#include <boost/algorithm/string.hpp>
 #include "lib/indent.h"
 
 
@@ -86,6 +87,50 @@ bool CFGBuilder::preorder(const IR::IfStatement* ifStmt) {
     return false;
 }
 
+bool CFGBuilder::preorder(const IR::SwitchStatement* switchStmt) {
+    b.add(switchStmt);
+    BasicBlock* beforeB = b.current();
+
+    auto createBlockForEachCase = [](auto& cases) {
+        std::vector<BasicBlock*> res;
+        std::for_each(cases.begin(), cases.end(), [&](auto*) {
+            res.push_back(new BasicBlock());
+        });
+        return res;
+    };
+
+    auto isFallthrough = [](auto* c) {
+        return !c->statement;
+    };
+
+    auto hasDefault = [](const IR::Vector<IR::SwitchCase>& cases) {
+        return !cases.empty() && cases.back()->label->is<IR::DefaultExpression>();
+    };
+
+    auto& cases = switchStmt->cases;
+    std::vector<BasicBlock*> blocks = createBlockForEachCase(cases);
+    // Add the 'after' block
+    BasicBlock* afterB = new BasicBlock();
+    blocks.push_back(afterB);
+    for (std::size_t i = 0; i < cases.size(); ++i) {
+        b.enterBasicBlock(beforeB);
+        b.addSuccessor(blocks[i]);
+        b.enterBasicBlock(blocks[i]);
+        if (isFallthrough(cases[i])) {
+            b.addSuccessor(blocks[i + 1]);
+            continue;
+        }
+        visit(cases[i]);
+        b.addSuccessor(afterB);
+    }
+    b.enterBasicBlock(beforeB);
+    if (!hasDefault(cases)) {
+        b.addSuccessor(afterB);
+    }
+    b.enterBasicBlock(afterB);
+    return false;
+}
+
 void CFGBuilder::Builder::add(const IR::StatOrDecl* item) {
     CHECK_NULL(curr, item);
     LOG3("CFGBuilder::add " << DBPrint::Brief << item);
@@ -140,14 +185,61 @@ void CFGPrinter::toStringImpl(const BasicBlock* bb, int indent,
 
 std::string CFGPrinter::toString(const IR::Node* node) const {
     CHECK_NULL(node);
-    if (auto* ifstmt = node->to<IR::IfStatement>()) {
-        std::stringstream ss;
-        ifstmt->condition->dbprint(ss);
-        std::string cond = ss.str();
+
+    // Creates a string for all cases which are run on the same action
+    auto groupToString = [&](const std::vector<const IR::SwitchCase*>& group) {
+        std::string res;
+        res += "[";
+        for (auto* c : group) {
+            res += toString(c->label);
+            if (res.back() == ';') {
+                res.pop_back();
+            }
+            res += " ";
+        }
+        boost::algorithm::trim(res);
+        res += "]";
+        return res;
+    };
+
+    // switch (table_t1 [foo1][foo2 foo3 foo4][foo5][default])
+    auto switchToString = [&](const IR::SwitchStatement* switchStmt) {
+        std::string table = toString(switchStmt->expression);
+        auto pos = table.find('.');
+        if (pos != std::string::npos) {
+            table = table.substr(0, pos);
+        }
+        std::vector<std::vector<const IR::SwitchCase*>> groups;
+        groups.emplace_back();
+        for (auto* c : switchStmt->cases) {
+            CHECK_NULL(c);
+            groups.back().push_back(c);
+            if (c->statement) {
+                groups.emplace_back();
+            }
+        }
+        if (groups.back().empty()) {
+            groups.pop_back();
+        }
+        std::string labels;
+        for (auto& g : groups) {
+            labels += groupToString(g);
+        }
+        return std::string("switch (") + table + " " + labels + ")";
+    };
+
+    if (auto* ifStmt = node->to<IR::IfStatement>()) {
+        std::string cond = toString(ifStmt->condition);
         if (!cond.empty() && cond.back() == ';') {
             cond.pop_back();
         }
         return std::string("if (") + cond + ")";
+    }
+    if (auto* switchStmt = node->to<IR::SwitchStatement>()) {
+        return switchToString(switchStmt);
+    }
+    if (node->is<IR::DefaultExpression>()) {
+        return "default";
     }
     std::stringstream ss;
     node->dbprint(ss);

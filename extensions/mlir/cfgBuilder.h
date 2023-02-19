@@ -32,6 +32,7 @@ class CFGBuilder : public Inspector
         BasicBlock* curr = nullptr;
     public:
         std::map<const IR::IDeclaration*, BasicBlock*> callableToCFG;
+        BasicBlock* current() { return curr; }
         void add(const IR::StatOrDecl* item);
         void addSuccessor(BasicBlock* succ);
         void enterBasicBlock(BasicBlock* bb);
@@ -53,6 +54,7 @@ class CFGBuilder : public Inspector
     bool preorder(const IR::P4Action* action) override;
     bool preorder(const IR::P4Control* control) override;
     bool preorder(const IR::IfStatement* ifStmt) override;
+    bool preorder(const IR::SwitchStatement* switchStmt) override;
     bool preorder(const IR::ReturnStatement* ret) override { b.add(ret); return true; }
     bool preorder(const IR::AssignmentStatement* assign) override { b.add(assign); return true; }
     bool preorder(const IR::MethodCallStatement* call) override { b.add(call); return true; }
@@ -111,6 +113,7 @@ class CFGWalker
         preorder(entry, visited, func);
     }
 
+    // TODO: This is not erase. More like follow-through
     template <typename Func>
     static BasicBlock* erase(BasicBlock* entry, Func shouldErase) {
         BasicBlock dummy;
@@ -120,6 +123,7 @@ class CFGWalker
                 return;
             }
             std::vector<BasicBlock*> newSuccs;
+            std::unordered_set<BasicBlock*> lookup;
             for (auto* succ : bb->succs) {
                 // We need to get over all of which should
                 // be erased to the first valid one
@@ -133,8 +137,9 @@ class CFGWalker
                     }
                     ptr = ptr->succs.front();
                 }
-                if (ptr) {
+                if (ptr && !lookup.count(ptr)) {
                     newSuccs.push_back(ptr);
+                    lookup.insert(ptr);
                 }
             }
             bb->succs = newSuccs;

@@ -410,8 +410,366 @@ TEST_F(CFGBuilder, Test_control_block_with_control_flow) {
             return;
         )"
     );
-
 }
+
+
+TEST_F(CFGBuilder, Test_switch_statement) {
+    std::string src = P4_SOURCE(R"(
+        struct Parsed_packet {}
+        control Pipe<H>(inout H headers);
+        package Pipeline<H>(Pipe<H> p);
+        control TopPipe(inout Parsed_packet hdr) {
+            action foo1() {}
+            action foo2() {}
+            action foo3() {}
+            table test_table {
+                key = { hdr.f1: exact; }
+                actions = { foo1; foo2; foo3; }
+                size = 1024;
+            }
+            apply {
+                switch (test_table.apply().action_run) {
+                    foo1 : { hdr.f2 = 3; }
+                    foo2 : { hdr.f3 = 1; return; }
+                    foo3 : { hdr.f4 = hdr.f1; }
+                    default: { return; }
+                }
+            }
+        }
+        Pipeline(TopPipe()) main;
+    )");
+    auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
+    ASSERT_TRUE(pgm && ::errorCount() == 0);
+
+    auto b = new p4mlir::CFGBuilder;
+    pgm->apply(*b);
+    auto all = b->getCFG();
+
+    ASSERT_EQ(all.size(), 4);
+    auto* cfgApply = getByName(all, "TopPipe");
+    ASSERT_TRUE(cfgApply);
+
+    CFG_EXPECT_FUZZY_EQ(cfgApply,
+        R"(bb^1
+            switch (test_table [foo1][foo2][foo3][default])
+            successors: bb^2 bb^3 bb^4 bb^5
+
+          bb^2
+            hdr.f2 = 3;
+            successors: bb^6
+
+          bb^3
+            hdr.f3 = 1;
+            return;
+
+          bb^4
+            hdr.f4 = hdr.f1;
+            successors: bb^6
+
+          bb^5
+            return;
+
+          bb^6
+            return;
+        )"
+    );
+}
+
+
+TEST_F(CFGBuilder, Test_switch_statement_without_default) {
+    std::string src = P4_SOURCE(R"(
+        struct Parsed_packet {}
+        control Pipe<H>(inout H headers);
+        package Pipeline<H>(Pipe<H> p);
+        control TopPipe(inout Parsed_packet hdr) {
+            action foo1() {}
+            action foo2() {}
+            action foo3() {}
+            table test_table {
+                key = { hdr.f1: exact; }
+                actions = { foo1; foo2; foo3; }
+                size = 1024;
+            }
+            apply {
+                switch (test_table.apply().action_run) {
+                    foo1 : { hdr.f2 = 3; }
+                    foo2 : { hdr.f3 = 1; return; }
+                    foo3 : { hdr.f4 = hdr.f1; }
+                }
+            }
+        }
+        Pipeline(TopPipe()) main;
+    )");
+    auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
+    ASSERT_TRUE(pgm && ::errorCount() == 0);
+
+    auto b = new p4mlir::CFGBuilder;
+    pgm->apply(*b);
+    auto all = b->getCFG();
+
+    ASSERT_EQ(all.size(), 4);
+    auto* cfgApply = getByName(all, "TopPipe");
+    ASSERT_TRUE(cfgApply);
+
+    // Last successor in the list is always the 'none matched'
+    // case. Which can be either 'default' or simple fallthrough
+    CFG_EXPECT_FUZZY_EQ(cfgApply,
+        R"(bb^1
+            switch (test_table [foo1][foo2][foo3])
+            successors: bb^2 bb^3 bb^4 bb^5
+
+          bb^2
+            hdr.f2 = 3;
+            successors: bb^5
+
+          bb^3
+            hdr.f3 = 1;
+            return;
+
+          bb^4
+            hdr.f4 = hdr.f1;
+            successors: bb^5
+
+          bb^5
+            return;
+        )"
+    );
+}
+
+
+TEST_F(CFGBuilder, Test_fall_through_switch_statement) {
+    std::string src = P4_SOURCE(R"(
+        struct Parsed_packet {}
+        control Pipe<H>(inout H headers);
+        package Pipeline<H>(Pipe<H> p);
+        control TopPipe(inout Parsed_packet hdr) {
+            action foo1() {}
+            action foo2() {}
+            action foo3() {}
+            table test_table {
+                key = { hdr.f1: exact; }
+                actions = { foo1; foo2; foo3; }
+                size = 1024;
+            }
+            apply {
+                hdr.f1 = hdr.f2;
+                switch (test_table.apply().action_run) {
+                    foo1 : { hdr.f2 = 3; }
+                    foo2 :
+                    foo3 : {
+                        hdr.f4 = hdr.f1;
+                        if (hdr.f1 == 10) {
+                            hdr.f5 = 3;
+                        }
+                    }
+                    default: { hdr.f3 = 9; }
+                }
+            }
+        }
+        Pipeline(TopPipe()) main;
+    )");
+    auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
+    ASSERT_TRUE(pgm && ::errorCount() == 0);
+
+    auto b = new p4mlir::CFGBuilder;
+    pgm->apply(*b);
+    auto all = b->getCFG();
+
+    ASSERT_EQ(all.size(), 4);
+    auto* cfgApply = getByName(all, "TopPipe");
+    ASSERT_TRUE(cfgApply);
+
+    CFG_EXPECT_FUZZY_EQ(cfgApply,
+        R"(bb^1
+            hdr.f1 = hdr.f2;
+            switch (test_table [foo1][foo2 foo3][default])
+            successors: bb^2 bb^3 bb^4
+
+          bb^2
+            hdr.f2 = 3;
+            successors: bb^6
+
+          bb^3
+            hdr.f4 = hdr.f1;
+            if (hdr.f1 == 10)
+            successors: bb^7 bb^6
+
+          bb^4
+            hdr.f3 = 9;
+            successors: bb^6
+
+          bb^6
+            return;
+
+          bb^7
+            hdr.f5 = 3;
+            successors: bb^6
+        )"
+    );
+}
+
+
+TEST_F(CFGBuilder, Test_wierd_fall_through_switch_statement) {
+    std::string src = P4_SOURCE(R"(
+        struct Parsed_packet {}
+        control Pipe<H>(inout H headers);
+        package Pipeline<H>(Pipe<H> p);
+        control TopPipe(inout Parsed_packet hdr) {
+            action foo1() {}
+            action foo2() {}
+            action foo3() {}
+            table test_table {
+                key = { hdr.f1: exact; }
+                actions = { foo1; foo2; foo3; }
+                size = 1024;
+            }
+            apply {
+                switch (test_table.apply().action_run) {
+                    foo1 :
+                    foo2 : { hdr.f3 = 1; }
+                    foo3 :
+                    default :
+                }
+            }
+        }
+        Pipeline(TopPipe()) main;
+    )");
+    auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
+    ASSERT_TRUE(pgm && ::errorCount() == 0);
+
+    auto b = new p4mlir::CFGBuilder;
+    pgm->apply(*b);
+    auto all = b->getCFG();
+
+    ASSERT_EQ(all.size(), 4);
+    auto* cfgApply = getByName(all, "TopPipe");
+    ASSERT_TRUE(cfgApply);
+
+    CFG_EXPECT_FUZZY_EQ(cfgApply,
+        R"(bb^1
+            switch (test_table [foo1 foo2][foo3 default])
+            successors: bb^2 bb^3
+
+          bb^2
+            hdr.f3 = 1;
+            successors: bb^3
+
+          bb^3
+            return;
+        )"
+    );
+}
+
+
+TEST_F(CFGBuilder, Test_wierd_fall_through_switch_statement_without_default) {
+    std::string src = P4_SOURCE(R"(
+        struct Parsed_packet {}
+        control Pipe<H>(inout H headers);
+        package Pipeline<H>(Pipe<H> p);
+        control TopPipe(inout Parsed_packet hdr) {
+            action foo1() {}
+            action foo2() {}
+            action foo3() {}
+            table test_table {
+                key = { hdr.f1: exact; }
+                actions = { foo1; foo2; foo3; }
+                size = 1024;
+            }
+            apply {
+                switch (test_table.apply().action_run) {
+                    foo1 :
+                    foo2 : { hdr.f3 = 1; }
+                    foo3 :
+                }
+            }
+        }
+        Pipeline(TopPipe()) main;
+    )");
+    auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
+    ASSERT_TRUE(pgm && ::errorCount() == 0);
+
+    auto b = new p4mlir::CFGBuilder;
+    pgm->apply(*b);
+    auto all = b->getCFG();
+
+    ASSERT_EQ(all.size(), 4);
+    auto* cfgApply = getByName(all, "TopPipe");
+    ASSERT_TRUE(cfgApply);
+
+    CFG_EXPECT_FUZZY_EQ(cfgApply,
+        R"(bb^1
+            switch (test_table [foo1 foo2][foo3])
+            successors: bb^2 bb^3
+
+          bb^2
+            hdr.f3 = 1;
+            successors: bb^3
+
+          bb^3
+            return;
+        )"
+    );
+}
+
+
+// TEST_F(CFGBuilder, Test_switch_statement_with_empty_cases) {
+//     std::string src = P4_SOURCE(R"(
+//         struct Parsed_packet {}
+//         control Pipe<H>(inout H headers);
+//         package Pipeline<H>(Pipe<H> p);
+//         control TopPipe(inout Parsed_packet hdr) {
+//             action foo1() {}
+//             action foo2() {}
+//             action foo3() {}
+//             action foo4() {}
+//             action foo5() {}
+//             table test_table {
+//                 key = { hdr.f1: exact; }
+//                 actions = { foo1; foo2; foo3; foo4; foo5; }
+//                 size = 1024;
+//             }
+//             apply {
+//                 switch (test_table.apply().action_run) {
+//                     foo1 : { hdr.f2 = 3; }
+//                     foo2 : {}
+//                     foo3 : { hdr.f4 = hdr.f1; }
+//                     foo4 :
+//                     foo5 : {}
+//                     default: {}
+//                 }
+//             }
+//         }
+//         Pipeline(TopPipe()) main;
+//     )");
+//     auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
+//     ASSERT_TRUE(pgm && ::errorCount() == 0);
+
+//     auto b = new p4mlir::CFGBuilder;
+//     pgm->apply(*b);
+//     auto all = b->getCFG();
+
+//     ASSERT_EQ(all.size(), 4);
+//     auto* cfgApply = getByName(all, "TopPipe");
+//     ASSERT_TRUE(cfgApply);
+
+//     CFG_EXPECT_FUZZY_EQ(cfgApply,
+//         R"(bb^1
+//             switch (test_table [foo1][foo2][foo3][foo4 foo5][default])
+//             successors: bb^2 bb^3 bb^4 bb^5 bb^6 // What to do here?
+
+//           bb^2
+//             hdr.f2 = 3;
+//             successors: bb^7
+
+//           bb^3
+//             hdr.f4 = hdr.f1;
+//             successors: bb^7
+
+//           bb^4
+//             return;
+//         )"
+//     );
+// }
 
 
 } // namespace p4mlir::tests
