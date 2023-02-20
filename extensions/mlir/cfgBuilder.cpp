@@ -34,6 +34,7 @@ void CFGBuilder::end_apply(const IR::Node*) {
             // TODO: Add other terminators
             if (bb->components.empty() || !bb->components.back()->is<IR::ReturnStatement>()) {
                 bb->components.push_back(new IR::ReturnStatement(nullptr));
+                ++modifiedBlocks;
             }
         }
         BUG_CHECK(modifiedBlocks <= 1,
