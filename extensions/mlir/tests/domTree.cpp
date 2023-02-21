@@ -1,5 +1,31 @@
 #include "gtest/gtest.h"
 
+#include "test/gtest/helpers.h"
+#include "frontends/common/parseInput.h"
+#include "../cfgBuilder.h"
+#include "../domTree.h"
+
+
+namespace p4mlir::tests {
+
+
+// This is a simple way how to get 'BasicBlock' that contains 'stmt' statement.
+// It relies on a unique string representation of the statement within the whole program.
+BasicBlock* getByStmtString(BasicBlock* entry, const std::string& stmt) {
+    auto bbs = p4mlir::CFGWalker::collect(entry, [&](auto* bb) {
+        return std::any_of(bb->components.begin(), bb->components.end(), [&](auto* c) {
+            return CFGPrinter::toString(c) == stmt;
+        });
+    });
+    if (bbs.size() != 1) {
+        throw std::domain_error("The searched statement must be unique and must exist");
+    }
+    return bbs.front();
+}
+
+
+class DomTree : public Test::P4CTest { };
+
 
 TEST_F(DomTree, Test_action_with_control_flow) {
     std::string src = P4_SOURCE(R"(
@@ -36,7 +62,7 @@ TEST_F(DomTree, Test_action_with_control_flow) {
     auto all = b->getCFG();
 
     ASSERT_EQ(all.size(), 1);
-    auto* cfgFoo = all.front().second;
+    auto* cfgFoo = all.begin()->second;
     ASSERT_TRUE(cfgFoo);
 
     p4mlir::BasicBlock* bb1 = getByStmtString(cfgFoo, "label = 1;");
@@ -57,10 +83,14 @@ TEST_F(DomTree, Test_action_with_control_flow) {
 
     // The order corresponds to the walk upwards from
     // the block to the entry block in a dominator tree
-    EXPECT_EQ(domTree->dominators(bb1), std::vector(bb1));
-    EXPECT_EQ(domTree->dominators(bb2), std::vector(bb2, bb1));
-    EXPECT_EQ(domTree->dominators(bb3), std::vector(bb3, bb2, bb1));
-    EXPECT_EQ(domTree->dominators(bb4), std::vector(bb4, bb2, bb1));
-    EXPECT_EQ(domTree->dominators(bb5), std::vector(bb5, bb2, bb1));
-    EXPECT_EQ(domTree->dominators(bb6), std::vector(bb6, bb1));
+    using Blocks = std::vector<const p4mlir::BasicBlock*>;
+    EXPECT_EQ(domTree->dominators(bb1), (Blocks{bb1}));
+    EXPECT_EQ(domTree->dominators(bb2), (Blocks{bb2, bb1}));
+    EXPECT_EQ(domTree->dominators(bb3), (Blocks{bb3, bb2, bb1}));
+    EXPECT_EQ(domTree->dominators(bb4), (Blocks{bb4, bb2, bb1}));
+    EXPECT_EQ(domTree->dominators(bb5), (Blocks{bb5, bb2, bb1}));
+    EXPECT_EQ(domTree->dominators(bb6), (Blocks{bb6, bb1}));
 }
+
+
+} // namespace p4mlir::tests

@@ -149,11 +149,10 @@ void CFGBuilder::Builder::enterBasicBlock(BasicBlock* bb) {
 }
 
 std::string toString(const BasicBlock* bb, int indent) {
-    CFGPrinter p;
-    return p.toString(bb, indent);
+    return CFGPrinter::toString(bb, indent);
 }
 
-std::string CFGPrinter::toString(const BasicBlock* entry, int indent) const {
+std::string CFGPrinter::toString(const BasicBlock* entry, int indent) {
     CHECK_NULL(entry);
     std::unordered_set<const BasicBlock*> visited;
     std::stringstream ss;
@@ -166,7 +165,7 @@ std::string CFGPrinter::toString(const BasicBlock* entry, int indent) const {
 
 void CFGPrinter::toStringImpl(const BasicBlock* bb, int indent,
                               std::unordered_set<const BasicBlock*>& visited,
-                              std::ostream& os) const {
+                              std::ostream& os) {
     visited.insert(bb);
     os << indent_t(indent) << makeBlockIdentifier(bb) << '\n';
     std::for_each(bb->components.begin(), bb->components.end(), [&](auto* comp) {
@@ -184,7 +183,7 @@ void CFGPrinter::toStringImpl(const BasicBlock* bb, int indent,
     });
 }
 
-std::string CFGPrinter::toString(const IR::Node* node) const {
+std::string CFGPrinter::toString(const IR::Node* node) {
     CHECK_NULL(node);
 
     // Creates a string for all cases which are run on the same action

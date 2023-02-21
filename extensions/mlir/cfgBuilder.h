@@ -10,6 +10,7 @@
 namespace p4mlir {
 
 
+// TODO: fix const correctes of succs
 struct BasicBlock {
     std::vector<const IR::StatOrDecl*> components;
     std::vector<BasicBlock*> succs;
@@ -79,16 +80,16 @@ class CFGBuilder : public Inspector
 class CFGPrinter
 {
  public:
-    std::string toString(const BasicBlock* entry, int indent = 0) const;
+    static std::string toString(const BasicBlock* entry, int indent = 0);
+    static std::string toString(const IR::Node* node);
 
 public:
     static std::string makeBlockIdentifier(const BasicBlock* bb);
 
  private:
-    void toStringImpl(const BasicBlock* bb, int indent,
-                            std::unordered_set<const BasicBlock*>& visited,
-                            std::ostream& os) const;
-    std::string toString(const IR::Node* node) const;
+    static void toStringImpl(const BasicBlock *bb, int indent,
+                             std::unordered_set<const BasicBlock *> &visited,
+                             std::ostream &os);
 };
 
 
@@ -96,10 +97,10 @@ public:
 class CFGWalker
 {
  public:
-    template <typename Func>
-    static std::vector<BasicBlock*> collect(BasicBlock* entry, Func shouldCollect) {
-        std::vector<BasicBlock*> res;
-        forEachBlock(entry, [&res, &shouldCollect](BasicBlock* bb) {
+    template <typename BBType, typename Func>
+    static std::vector<BBType*> collect(BBType* entry, Func shouldCollect) {
+        std::vector<BBType*> res;
+        forEachBlock(entry, [&res, &shouldCollect](BBType* bb) {
             if (shouldCollect(bb)) {
                 res.push_back(bb);
             }
@@ -107,9 +108,22 @@ class CFGWalker
         return res;
     }
 
-    template <typename Func>
-    static void forEachBlock(BasicBlock* entry, Func func) {
-        std::unordered_set<const BasicBlock*> visited;
+    template <typename BBType, typename Func>
+    static void forEachBlock(BBType* entry, Func func) {
+        preorder(entry, func);
+    }
+
+    template <typename BBType, typename Func>
+    static void postorder(BBType* entry, Func func) {
+        CHECK_NULL(entry);
+        std::unordered_set<BBType*> visited;
+        postorder(entry, visited, func);
+    }
+
+    template <typename BBType, typename Func>
+    static void preorder(BBType* entry, Func func) {
+        CHECK_NULL(entry);
+        std::unordered_set<BBType*> visited;
         preorder(entry, visited, func);
     }
 
@@ -148,8 +162,8 @@ class CFGWalker
     }
 
  private:
-    template <typename Func>
-    static void preorder(BasicBlock* bb, std::unordered_set<const BasicBlock*>& visited, Func func) {
+    template <typename BBType, typename Func>
+    static void preorder(BBType* bb, std::unordered_set<BBType*>& visited, Func func) {
         CHECK_NULL(bb);
         if (visited.count(bb)) {
             return;
@@ -157,8 +171,21 @@ class CFGWalker
         visited.insert(bb);
         func(bb);
         for (auto* succ : bb->succs) {
-            preorder(succ, visited, func);
+            preorder((BBType*)succ, visited, func);
         }
+    }
+
+    template <typename BBType, typename Func>
+    static void postorder(BBType* bb, std::unordered_set<BBType*>& visited, Func func) {
+        CHECK_NULL(bb);
+        if (visited.count(bb)) {
+            return;
+        }
+        visited.insert(bb);
+        for (auto* succ : bb->succs) {
+            postorder((BBType*)succ, visited, func);
+        }
+        func(bb);
     }
 };
 
