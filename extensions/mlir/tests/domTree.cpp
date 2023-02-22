@@ -1,5 +1,6 @@
 #include "gtest/gtest.h"
 
+#include <unordered_set>
 #include "test/gtest/helpers.h"
 #include "frontends/common/parseInput.h"
 #include "common.h"
@@ -76,6 +77,14 @@ TEST_F(DomTree, Test_action_with_control_flow) {
     EXPECT_EQ(domTree->dominators(bb4), (Blocks{bb4, bb2, bb1}));
     EXPECT_EQ(domTree->dominators(bb5), (Blocks{bb5, bb2, bb1}));
     EXPECT_EQ(domTree->dominators(bb6), (Blocks{bb6, bb1}));
+
+    using UnorderedBlocks = std::unordered_set<const p4mlir::BasicBlock*>;
+    EXPECT_EQ(domTree->domFrontier(bb1), (UnorderedBlocks{}));
+    EXPECT_EQ(domTree->domFrontier(bb2), (UnorderedBlocks{bb6}));
+    EXPECT_EQ(domTree->domFrontier(bb3), (UnorderedBlocks{bb5}));
+    EXPECT_EQ(domTree->domFrontier(bb4), (UnorderedBlocks{bb5}));
+    EXPECT_EQ(domTree->domFrontier(bb5), (UnorderedBlocks{bb6}));
+    EXPECT_EQ(domTree->domFrontier(bb6), (UnorderedBlocks{}));
 }
 
 TEST_F(DomTree, Test_action_with_complex_control_flow) {

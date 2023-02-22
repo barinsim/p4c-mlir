@@ -25,6 +25,9 @@ DomTree::DomTree(const BasicBlock* entry) {
         BUG_CHECK(!mapping.empty(), "Mapping must be already established at this point");
         std::unordered_map<int, std::vector<int>> preds;
         CFGWalker::forEachBlock(e, [&](const BasicBlock* bb) {
+            if (!preds.count(idx(bb))) {
+                preds.insert({idx(bb), {}});
+            }
             for (auto* succ : bb->succs) {
                 preds[idx(succ)].push_back(idx(bb));
             }
@@ -48,11 +51,11 @@ DomTree::DomTree(const BasicBlock* entry) {
         return a;
     };
 
-    // Creates the actual dominator tree
+    // Creates the dominator tree
     auto createTree = [&]() {
         int nodes = mapping.size();
         int entry = nodes - 1;
-        auto preds = collectPredecessors(block(entry));
+        const auto preds = collectPredecessors(block(entry));
         std::vector<int> par(nodes, -1);
         par[entry] = entry;
         bool changed = true;
@@ -60,9 +63,9 @@ DomTree::DomTree(const BasicBlock* entry) {
             changed = false;
             // Traverse nodes in a reverse postorder (except the start node)
             for (int node = nodes - 2; node >= 0; --node) {
-                BUG_CHECK(preds.count(node), "Could not find predecessors for a block");
+                BUG_CHECK(preds.count(node), "Predecessors info not found");
                 int immDom = -1;
-                for (int pred : preds[node]) {
+                for (int pred : preds.at(node)) {
                     if (par[pred] == -1) {
                         continue;
                     }
@@ -82,6 +85,32 @@ DomTree::DomTree(const BasicBlock* entry) {
         return par;
     };
 
+    // For each node creates a set of dominance frontier nodes,
+    // Using dominator tree 'par'
+    auto createDominanceFrontierSets = [&](const std::vector<int>& par) {
+        int nodes = mapping.size();
+        int entry = nodes - 1;
+        std::unordered_map<int, std::unordered_set<int>> res;
+        const auto preds = collectPredecessors(block(entry));
+        for (int node = 0; node < nodes; ++node) {
+            BUG_CHECK(preds.count(node), "Predecessors info not found");
+            if (!res.count(node)) {
+                res.insert({node, {}});
+            }
+            if (preds.at(node).size() < 2) {
+                continue;
+            }
+            for (int pred : preds.at(node)) {
+                int ptr = pred;
+                while (ptr != par.at(node)) {
+                    res[ptr].insert(node);
+                    ptr = par.at(ptr);
+                }
+            }
+        }
+        return res;
+    };
+
     mapping = createMapping(entry);
     for (auto& [bb, idx] : mapping) {
         BUG_CHECK(!revMapping.count(idx), "The mapping must be one-to-one");
@@ -91,6 +120,7 @@ DomTree::DomTree(const BasicBlock* entry) {
                 "Entry block should map to the last index in a postorder traversal");
 
     data = createTree();
+    domFrontiers = createDominanceFrontierSets(data);
 }
 
 const BasicBlock* DomTree::block(int idx) const {

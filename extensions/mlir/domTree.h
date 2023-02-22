@@ -13,13 +13,15 @@ namespace p4mlir {
 
 class DomTree
 {
- // Tree data data[b] = 'parent of b'
- std::vector<int> data;
-
  // Maps block to the index into 'data'.
  // Also corresponds to the postorder traversal of cfg.
  std::unordered_map<const BasicBlock*, int> mapping;
  std::unordered_map<int, const BasicBlock*> revMapping;
+
+ // Tree data data[b] = 'parent of b'
+ std::vector<int> data;
+
+ std::unordered_map<int, std::unordered_set<int>> domFrontiers;
 
  public:
     static DomTree* fromEntryBlock(const BasicBlock* entry) {
@@ -47,6 +49,17 @@ class DomTree
             node = data.at(node);
             res.push_back(block(node));
         }
+        return res;
+    }
+
+    std::unordered_set<const BasicBlock*> domFrontier(const BasicBlock* bb) const {
+        CHECK_NULL(bb);
+        int node = idx(bb);
+        BUG_CHECK(domFrontiers.count(node), "Dominance frontier info not found");
+        std::unordered_set<const BasicBlock*> res;
+        std::for_each(domFrontiers.at(node).begin(), domFrontiers.at(node).end(), [&](int n) {
+            res.insert(block(n));
+        });
         return res;
     }
 
