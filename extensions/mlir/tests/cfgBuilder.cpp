@@ -3,6 +3,7 @@
 
 #include "test/gtest/helpers.h"
 #include "frontends/common/parseInput.h"
+#include "common.h"
 #include "../cfgBuilder.h"
 
 
@@ -110,17 +111,6 @@ testing::AssertionResult fuzzyEq(TextCFG&& a, TextCFG&& b) {
                                        << toString(ablocks) << "\n"
                                        << "Not-matched in B:\n"
                                        << toString(bblocks);
-}
-
-BasicBlock* getByName(const std::map<const IR::IDeclaration*, BasicBlock*>& cfg,
-                      const std::string& name) {
-    auto it = std::find_if(cfg.begin(), cfg.end(), [&](auto& p) {
-        return p.first->getName() == name;
-    });
-    if (it == cfg.end()) {
-        return nullptr;
-    }
-    return it->second;
 }
 
 // Checking if two graphs are equal is NP-i problem.

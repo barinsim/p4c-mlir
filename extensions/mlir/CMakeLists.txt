@@ -15,6 +15,7 @@ set (
     GTEST_MLIR_SOURCES
     tests/cfgBuilder.cpp
     tests/domTree.cpp
+    tests/common.cpp
 
     ${P4C_SOURCE_DIR}/test/gtest/helpers.cpp
     ${P4C_SOURCE_DIR}/test/gtest/gtestp4c.cpp
