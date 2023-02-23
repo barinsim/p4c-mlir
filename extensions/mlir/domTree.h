@@ -21,6 +21,9 @@ class DomTree
  // Tree data data[b] = 'parent of b'
  std::vector<int> data;
 
+ // Tree data data[b] = 'children of b'
+ std::vector<std::unordered_set<int>> revData;
+
  std::unordered_map<int, std::unordered_set<int>> domFrontiers;
 
  public:
@@ -58,6 +61,17 @@ class DomTree
         BUG_CHECK(domFrontiers.count(node), "Dominance frontier info not found");
         std::unordered_set<const BasicBlock*> res;
         std::for_each(domFrontiers.at(node).begin(), domFrontiers.at(node).end(), [&](int n) {
+            res.insert(block(n));
+        });
+        return res;
+    }
+
+    std::unordered_set<const BasicBlock*> children(const BasicBlock* bb) const {
+        CHECK_NULL(bb);
+        int node = idx(bb);
+        BUG_CHECK(node >= 0 && node < (int)revData.size(), "Children info not found");
+        std::unordered_set<const BasicBlock*> res;
+        std::for_each(revData.at(node).begin(), revData.at(node).end(), [&](int n) {
             res.insert(block(n));
         });
         return res;

@@ -85,6 +85,16 @@ DomTree::DomTree(const BasicBlock* entry) {
         return par;
     };
 
+    // Creates 'node -> {children}' tree from 'node -> parent' tree
+    auto createRevTree = [&](const std::vector<int>& par) {
+        std::vector<std::unordered_set<int>> res(par.size());
+        for (int node = 0; node < (int)par.size(); ++node) {
+            auto status = res[par[node]].insert(node);
+            BUG_CHECK(status.second, "Node has multiple identical children");
+        }
+        return res;
+    };
+
     // For each node creates a set of dominance frontier nodes,
     // Using dominator tree 'par'
     auto createDominanceFrontierSets = [&](const std::vector<int>& par) {
@@ -120,6 +130,7 @@ DomTree::DomTree(const BasicBlock* entry) {
                 "Entry block should map to the last index in a postorder traversal");
 
     data = createTree();
+    revData = createRevTree(data);
     domFrontiers = createDominanceFrontierSets(data);
 }
 
