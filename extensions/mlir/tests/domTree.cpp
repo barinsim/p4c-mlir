@@ -159,6 +159,16 @@ TEST_F(DomTree, Test_action_with_complex_control_flow) {
     EXPECT_EQ(domTree->dominators(bb6), (Blocks{bb6, bb2, bb1}));
     EXPECT_EQ(domTree->dominators(bb7), (Blocks{bb7, bb6, bb2, bb1}));
     EXPECT_EQ(domTree->dominators(bb8), (Blocks{bb8, bb1}));
+
+    using UnorderedBlocks = std::unordered_set<const p4mlir::BasicBlock*>;
+    EXPECT_EQ(domTree->domFrontier(bb1), (UnorderedBlocks{}));
+    EXPECT_EQ(domTree->domFrontier(bb2), (UnorderedBlocks{bb8}));
+    EXPECT_EQ(domTree->domFrontier(bb3), (UnorderedBlocks{bb8}));
+    EXPECT_EQ(domTree->domFrontier(bb4), (UnorderedBlocks{bb8}));
+    EXPECT_EQ(domTree->domFrontier(bb5), (UnorderedBlocks{bb8}));
+    EXPECT_EQ(domTree->domFrontier(bb6), (UnorderedBlocks{bb8}));
+    EXPECT_EQ(domTree->domFrontier(bb7), (UnorderedBlocks{bb8}));
+    EXPECT_EQ(domTree->domFrontier(bb8), (UnorderedBlocks{}));
 }
 
 TEST_F(DomTree, Test_fall_through_switch_statement) {
@@ -257,6 +267,16 @@ TEST_F(DomTree, Test_fall_through_switch_statement) {
     EXPECT_EQ(domTree->dominators(bb7), (Blocks{bb7, bb1}));
     EXPECT_EQ(domTree->dominators(bb8), (Blocks{bb8, bb7, bb1}));
     EXPECT_EQ(domTree->dominators(bb9), (Blocks{bb9, bb7, bb1}));
+
+    using UnorderedBlocks = std::unordered_set<const p4mlir::BasicBlock*>;
+    EXPECT_EQ(domTree->domFrontier(bb1), (UnorderedBlocks{}));
+    EXPECT_EQ(domTree->domFrontier(bb2), (UnorderedBlocks{bb7}));
+    EXPECT_EQ(domTree->domFrontier(bb3), (UnorderedBlocks{bb7}));
+    EXPECT_EQ(domTree->domFrontier(bb4), (UnorderedBlocks{}));
+    EXPECT_EQ(domTree->domFrontier(bb5), (UnorderedBlocks{bb7}));
+    EXPECT_EQ(domTree->domFrontier(bb6), (UnorderedBlocks{bb7}));
+    EXPECT_EQ(domTree->domFrontier(bb7), (UnorderedBlocks{}));
+    EXPECT_EQ(domTree->domFrontier(bb8), (UnorderedBlocks{bb9}));
 }
 
 
