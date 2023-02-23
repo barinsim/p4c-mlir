@@ -5,6 +5,7 @@
 
 #include "frontends/common/parseInput.h"
 #include "frontends/common/parser_options.h"
+#include "frontends/common/resolveReferences/resolveReferences.h"
 #include "frontends/p4/frontend.h"
 #include "ir/ir.h"
 #include "lib/gc.h"
@@ -66,10 +67,17 @@ int main(int argc, char *const argv[]) {
     auto cfgBuilder = new p4mlir::CFGBuilder;
     program->apply(*cfgBuilder);
 
-    for (auto& [decl, bb] : cfgBuilder->getCFG()) {
-        std::cout << decl->getName() << '\n';
-        std::cout << toString(bb, 1) << '\n' << '\n';
-    }
+    auto* refMap = new P4::ReferenceMap();
+    auto* rr = new P4::ResolveReferences(refMap);
+    program->apply(*rr);
+    std::cout << std::endl << std::endl << std::endl << std::endl;
+    std::cout << "REFERENCES" << std::endl;
+    std::cout << *refMap << std::endl;
+
+    // for (auto& [decl, bb] : cfgBuilder->getCFG()) {
+    //     std::cout << decl->getName() << '\n';
+    //     std::cout << toString(bb, 1) << '\n' << '\n';
+    // }
 
     return errorCount() != 0;
 }

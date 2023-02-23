@@ -2,6 +2,7 @@ set(
     P4C_MLIR_SOURCES
     cfgBuilder.cpp
     domTree.cpp
+    ssa.cpp
 )
 
 add_library(p4c-mlir-lib ${P4C_MLIR_SOURCES})
@@ -16,6 +17,7 @@ set (
     tests/cfgBuilder.cpp
     tests/domTree.cpp
     tests/common.cpp
+    tests/ssa.cpp
 
     ${P4C_SOURCE_DIR}/test/gtest/helpers.cpp
     ${P4C_SOURCE_DIR}/test/gtest/gtestp4c.cpp
