@@ -32,8 +32,6 @@ class DomTree
         return new DomTree(entry);
     }
 
-    DomTree() = delete;
-
     const BasicBlock* immediateDom(const BasicBlock* bb) const {
         CHECK_NULL(bb);
         int par = data.at(idx(bb));
@@ -79,6 +77,7 @@ class DomTree
 
  private:
     DomTree(const BasicBlock* entry);
+    DomTree() = delete;
 
     const BasicBlock* block(int idx) const;
     int idx(const BasicBlock* bb) const;
