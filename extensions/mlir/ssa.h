@@ -123,7 +123,7 @@ class SSAConversion : public Transform
     const P4::TypeMap* typeMap = nullptr;
 
  public:
-    SSAConversion(const P4::TypeMap* typeMap_) : typeMap(typeMap_) { CHECK_NULL(typemap); }
+    SSAConversion(const P4::TypeMap* typeMap_) : typeMap(typeMap_) { CHECK_NULL(typeMap); }
 
  private:
     IR::Node* preorder(IR::StatOrDecl* statOrDecl) {
@@ -137,8 +137,10 @@ class SSAConversion : public Transform
             return statOrDecl;
         }
         BUG_CHECK(!toInsert.count(statOrDecl), "Statement visited twice");
-        toInsert.insert({statOrDecl, std::move(newStmts)});
-        newStmts.clear();
+        if (!newStmts.empty()) {
+            toInsert.insert({statOrDecl, std::move(newStmts)});
+            newStmts.clear();
+        }
         return statOrDecl;
     }
 

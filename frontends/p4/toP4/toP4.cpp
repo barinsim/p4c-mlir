@@ -1160,7 +1160,9 @@ bool ToP4::preorder(const IR::SSACall *s) {
     setVecSep(", ");
     visit(s->exprs);
     doneVec();
-    builder.append(" = ");
+    if (!s->exprs->empty()) {
+        builder.append(" = ");
+    }
     visit(s->callable);
     builder.endOfStatement();
     return false;
