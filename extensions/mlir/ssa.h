@@ -5,6 +5,7 @@
 #include <stack>
 #include "ir/ir.h"
 #include "ir/visitor.h"
+#include "ir/dump.h"
 #include "frontends/common/resolveReferences/referenceMap.h"
 #include "frontends/p4/typeMap.h"
 #include "lib/log.h"
@@ -12,11 +13,15 @@
 
 namespace p4mlir {
 
+
 namespace {
-    bool isPrimitiveType(const IR::Type* type) {
-        CHECK_NULL(type);
-        return type->is<IR::Type::Bits>() || type->is<IR::Type::Varbits>() || type->is<IR::Type::Boolean>();
-    }
+
+bool isPrimitiveType(const IR::Type *type) {
+    CHECK_NULL(type);
+    return type->is<IR::Type::Bits>() || type->is<IR::Type::Varbits>() ||
+           type->is<IR::Type::Boolean>();
+}
+
 }
 
 
@@ -105,18 +110,93 @@ class GatherSSAReferences : public Inspector
 };
 
 
-/*class SSAInfo
+class SSAConversion : public Transform
 {
+    // New statements/declarations that were created during visiting current statement/declaration.
+    // Gets copied into 'toInsert' and cleared after each statement.
+    std::vector<IR::StatOrDecl*> newStmts;
+
+    // New statements for current block statement. Maps insertion point to statements that need to
+    // be inserted before the insertion point.
+    std::unordered_map<const IR::StatOrDecl*, std::vector<IR::StatOrDecl*>> toInsert;
+
+    const P4::TypeMap* typeMap = nullptr;
 
  public:
-    static SSAInfo* create(BasicBlock* entry, DomTree* domTree, P4ReferenceMap* refMap) {
-
-    }
+    SSAConversion(const P4::TypeMap* typeMap_) : typeMap(typeMap_) { CHECK_NULL(typemap); }
 
  private:
-    SSAInfo()
+    IR::Node* preorder(IR::StatOrDecl* statOrDecl) {
+        newStmts.clear();
+        return statOrDecl;
+    }
 
-};*/
+    IR::Node* postorder(IR::StatOrDecl* statOrDecl) {
+        if (!findContext<IR::BlockStatement>()) {
+            BUG_CHECK(newStmts.empty(), "Rewriting outside of block statement is not implemented");
+            return statOrDecl;
+        }
+        BUG_CHECK(!toInsert.count(statOrDecl), "Statement visited twice");
+        toInsert.insert({statOrDecl, std::move(newStmts)});
+        newStmts.clear();
+        return statOrDecl;
+    }
+
+    IR::Node* postorder(IR::MethodCallExpression* call) {
+        auto* baseType = typeMap->getType(call->method)->to<IR::Type_MethodBase>();
+        auto* retType = baseType->returnType;
+        bool hasRetVal = retType && !retType->is<IR::Type_Void>();
+        IR::Declaration_Variable* decl = nullptr;
+        if (hasRetVal && !getParent<IR::MethodCallStatement>()) {
+            // TODO: generate the name from refMap
+            static int id = 0;
+            std::string name = "__tmp" + std::to_string(id++);
+            decl = new IR::Declaration_Variable(IR::ID(name), retType);
+        }
+        if (decl) {
+            newStmts.push_back(decl);
+            auto* ref = new IR::PathExpression(decl->getName());
+            auto* refs = new IR::Vector<IR::Expression>({ref});
+            newStmts.push_back(new IR::SSACall(call, refs));
+            return new IR::PathExpression(decl->getName());
+        }
+        newStmts.push_back(new IR::SSACall(call, new IR::Vector<IR::Expression>()));
+        return nullptr;
+    }
+
+    IR::Node* postorder(IR::MethodCallStatement* stmt) {
+        BUG_CHECK(!newStmts.empty() && newStmts.back()->is<IR::SSACall>(),
+                  "MethodCallStatement should always produce SSACall");
+        auto* ssaCall = newStmts.back();
+        newStmts.pop_back();
+        BUG_CHECK(!toInsert.count(stmt), "Statement visited twice");
+        toInsert.insert({ssaCall, std::move(newStmts)});
+        newStmts.clear();
+        return ssaCall;
+    }
+
+    IR::Node* preorder(IR::BlockStatement* block) {
+        toInsert.clear();
+        return block;
+    }
+
+    IR::Node* postorder(IR::BlockStatement* block) {
+        if (toInsert.empty()) {
+            return block;
+        }
+        auto* newBlock = new IR::BlockStatement(block->srcInfo, block->annotations);
+        auto& components = newBlock->components;
+        for (auto* comp : block->components) {
+            if (toInsert.count(comp)) {
+                components.insert(components.end(), toInsert[comp].begin(), toInsert[comp].end());
+                toInsert.erase(comp);
+            }
+            components.push_back(comp);
+        }
+        BUG_CHECK(toInsert.empty(), "Some of the new statements were not inserted");
+        return newBlock;
+    }
+};
 
 
 } // namespace p4mlir

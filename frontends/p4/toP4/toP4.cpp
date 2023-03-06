@@ -1155,6 +1155,17 @@ bool ToP4::preorder(const IR::MethodCallStatement *s) {
     return false;
 }
 
+bool ToP4::preorder(const IR::SSACall *s) {
+    dump(3);
+    setVecSep(", ");
+    visit(s->exprs);
+    doneVec();
+    builder.append(" = ");
+    visit(s->callable);
+    builder.endOfStatement();
+    return false;
+}
+
 bool ToP4::preorder(const IR::SwitchCase *s) {
     visit(s->label);
     builder.append(": ");

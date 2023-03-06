@@ -1,0 +1,29 @@
+class Type_SSACallable : Type, ISimpleNamespace {
+    Vector<Type> returnTypes;
+    ParameterList parameters;
+
+    size_t maxParameterCount() const { return parameters->size(); }
+    size_t minParameterCount() const;
+    dbprint { out << "<SSACallable>"; }
+    toString { return "<SSACallable>"; }
+    const IR::Type* getP4Type() const override { return nullptr; }
+    Util::Enumerator<IDeclaration>* getDeclarations() const override {
+        return parameters->getDeclarations(); }
+    IDeclaration getDeclByName(cstring name) const override {
+        auto decl = parameters->getDeclByName(name);
+        return decl; }
+}
+
+class SSACall : Statement {
+    MethodCallExpression callable;
+    Vector<Expression> exprs;
+    dbprint { out << exprs << " = " << callable; }
+    toString { return "<SSACall>"; }
+}
+
+class SSAReturnStatement : Statement {
+    Vector<Expression> exprs;
+    dbprint { out << "return " << exprs; }
+    toString { return "<SSAReturnStatement>"; }
+}
+
