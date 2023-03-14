@@ -140,6 +140,7 @@ TEST_F(CFGBuilder, Test_multiple_simple_actions) {
             hdr.f1 = 3;
             hdr.f2 = hdr.f3;
             hdr.f3 = 5;
+            int<16> f4;
             test2.apply();
             return;
         }
@@ -161,7 +162,7 @@ TEST_F(CFGBuilder, Test_multiple_simple_actions) {
     pgm->apply(*b);
     auto all = b->getCFG();
 
-    ASSERT_EQ(all.size(), 3);
+    ASSERT_EQ(all.size(), (std::size_t)3);
     auto* cfgFoo = getByName(all, "foo");
     auto* cfgBar = getByName(all, "bar");
     auto* cfgBaz = getByName(all, "baz");
@@ -174,6 +175,7 @@ TEST_F(CFGBuilder, Test_multiple_simple_actions) {
             hdr.f1 = 3;
             hdr.f2 = hdr.f3;
             hdr.f3 = 5;
+            int<16> f4;
             test2.apply();
             return;
         )"
@@ -243,6 +245,7 @@ TEST_F(CFGBuilder, Test_control_block_with_control_flow) {
                         hdr.inner.f1 = hdr.inner.f1 + 1;
                     }
                     if (hdr.inner.port1 + hdr.f1 == 13) {
+                        int<16> f4;
                         hdr.inner.f1 = hdr.f5;
                     } else {
                         hdr.inner.f1 = hdr.f5 + 1;
@@ -288,7 +291,7 @@ TEST_F(CFGBuilder, Test_control_block_with_control_flow) {
     pgm->apply(*b);
     auto all = b->getCFG();
 
-    ASSERT_EQ(all.size(), 5);
+    ASSERT_EQ(all.size(), (std::size_t)5);
     auto* cfgNhop = getByName(all, "Set_nhop");
     auto cfgSmac = getByName(all, "Set_smac");
     auto* cfgEmpty = getByName(all, "Empty");
@@ -327,6 +330,7 @@ TEST_F(CFGBuilder, Test_control_block_with_control_flow) {
             successors: bb^5 bb^6
 
            bb^5
+            int<16> f4;
             hdr.inner.f1 = hdr.f5;
             successors: bb^7
 
@@ -420,7 +424,11 @@ TEST_F(CFGBuilder, Test_switch_statement) {
             apply {
                 switch (test_table.apply().action_run) {
                     foo1 : { hdr.f2 = 3; }
-                    foo2 : { hdr.f3 = 1; return; }
+                    foo2 : {
+                        bit<16> f4;
+                        hdr.f3 = 1;
+                        return;
+                    }
                     foo3 : { hdr.f4 = hdr.f1; }
                     default: { return; }
                 }
@@ -435,7 +443,7 @@ TEST_F(CFGBuilder, Test_switch_statement) {
     pgm->apply(*b);
     auto all = b->getCFG();
 
-    ASSERT_EQ(all.size(), 4);
+    ASSERT_EQ(all.size(), (std::size_t)4);
     auto* cfgApply = getByName(all, "TopPipe");
     ASSERT_TRUE(cfgApply);
 
@@ -449,6 +457,7 @@ TEST_F(CFGBuilder, Test_switch_statement) {
             successors: bb^6
 
           bb^3
+            bit<16> f4;
             hdr.f3 = 1;
             return;
 
@@ -497,7 +506,7 @@ TEST_F(CFGBuilder, Test_switch_statement_without_default) {
     pgm->apply(*b);
     auto all = b->getCFG();
 
-    ASSERT_EQ(all.size(), 4);
+    ASSERT_EQ(all.size(), (std::size_t)4);
     auto* cfgApply = getByName(all, "TopPipe");
     ASSERT_TRUE(cfgApply);
 
@@ -565,7 +574,7 @@ TEST_F(CFGBuilder, Test_fall_through_switch_statement) {
     pgm->apply(*b);
     auto all = b->getCFG();
 
-    ASSERT_EQ(all.size(), 4);
+    ASSERT_EQ(all.size(), (std::size_t)4);
     auto* cfgApply = getByName(all, "TopPipe");
     ASSERT_TRUE(cfgApply);
 
@@ -631,7 +640,7 @@ TEST_F(CFGBuilder, Test_wierd_fall_through_switch_statement) {
     pgm->apply(*b);
     auto all = b->getCFG();
 
-    ASSERT_EQ(all.size(), 4);
+    ASSERT_EQ(all.size(), (std::size_t)4);
     auto* cfgApply = getByName(all, "TopPipe");
     ASSERT_TRUE(cfgApply);
 
@@ -682,7 +691,7 @@ TEST_F(CFGBuilder, Test_wierd_fall_through_switch_statement_without_default) {
     pgm->apply(*b);
     auto all = b->getCFG();
 
-    ASSERT_EQ(all.size(), 4);
+    ASSERT_EQ(all.size(), (std::size_t)4);
     auto* cfgApply = getByName(all, "TopPipe");
     ASSERT_TRUE(cfgApply);
 
@@ -738,7 +747,7 @@ TEST_F(CFGBuilder, Test_wierd_fall_through_switch_statement_without_default) {
 //     pgm->apply(*b);
 //     auto all = b->getCFG();
 
-//     ASSERT_EQ(all.size(), 4);
+//     ASSERT_EQ(all.size(), (std::size_t)4);
 //     auto* cfgApply = getByName(all, "TopPipe");
 //     ASSERT_TRUE(cfgApply);
 

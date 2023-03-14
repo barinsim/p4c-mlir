@@ -2,6 +2,7 @@
 
 #include <boost/algorithm/string.hpp>
 #include "lib/indent.h"
+#include "frontends/p4/toP4/toP4.h"
 
 
 namespace p4mlir {
@@ -132,6 +133,14 @@ bool CFGBuilder::preorder(const IR::SwitchStatement* switchStmt) {
     return false;
 }
 
+bool CFGBuilder::preorder(const IR::Declaration_Variable* decl) {
+    if (!findContext<IR::BlockStatement>()) {
+        return true;
+    }
+    b.add(decl);
+    return true;
+}
+
 void CFGBuilder::Builder::add(const IR::StatOrDecl* item) {
     CHECK_NULL(curr, item);
     LOG3("CFGBuilder::add " << DBPrint::Brief << item);
@@ -230,20 +239,12 @@ std::string CFGPrinter::toString(const IR::Node* node) {
 
     if (auto* ifStmt = node->to<IR::IfStatement>()) {
         std::string cond = toString(ifStmt->condition);
-        if (!cond.empty() && cond.back() == ';') {
-            cond.pop_back();
-        }
         return std::string("if (") + cond + ")";
     }
     if (auto* switchStmt = node->to<IR::SwitchStatement>()) {
         return switchToString(switchStmt);
     }
-    if (node->is<IR::DefaultExpression>()) {
-        return "default";
-    }
-    std::stringstream ss;
-    node->dbprint(ss);
-    return ss.str();
+    return P4::toP4(node);
 }
 
 std::string CFGPrinter::makeBlockIdentifier(const BasicBlock* bb) {

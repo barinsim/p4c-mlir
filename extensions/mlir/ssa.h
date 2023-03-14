@@ -26,7 +26,7 @@ bool isPrimitiveType(const IR::Type *type) {
 }
 
 
-class GatherOutParamScalars : public Inspector, P4WriteContext
+class GatherOutArgsScalars : public Inspector, P4WriteContext
 {
     class Builder {
         std::unordered_set<const IR::IDeclaration*> decls;
@@ -41,7 +41,7 @@ class GatherOutParamScalars : public Inspector, P4WriteContext
     const P4::TypeMap* typeMap;
 
  public:
-    GatherOutParamScalars(const P4::ReferenceMap *refMap_, const P4::TypeMap *typeMap_)
+    GatherOutArgsScalars(const P4::ReferenceMap *refMap_, const P4::TypeMap *typeMap_)
         : refMap(refMap_), typeMap(typeMap_) {
         CHECK_NULL(refMap_);
         CHECK_NULL(typeMap_);
@@ -83,10 +83,6 @@ class GatherSSAReferences : public Inspector, P4WriteContext
             CHECK_NULL(pe, decl);
             reads.push_back({pe, decl});
         }
-        void addRead(const IR::IDeclaration* decl) {
-             CHECK_NULL(decl);
-             reads.push_back({decl, decl});
-        }
         void addWrite(const IR::PathExpression* pe, const IR::IDeclaration* decl) {
             CHECK_NULL(pe, decl);
             writes.push_back({pe, decl});
@@ -108,11 +104,15 @@ class GatherSSAReferences : public Inspector, P4WriteContext
     const std::unordered_set<const IR::IDeclaration*> forbidden;
 
 public:
-    std::vector<RefInfo> getReads() const { return b.getReads(); }
-    std::vector<RefInfo> getWrites() const { return b.getWrites(); }
+   GatherSSAReferences(const P4::TypeMap *typeMap_, const P4::ReferenceMap *refMap_,
+                       std::unordered_set<const IR::IDeclaration *> forbidden_)
+       : typeMap(typeMap_), refMap(refMap_), forbidden(std::move(forbidden_)) {}
 
- private:
-    bool preorder(const IR::PathExpression* pe) override {
+   std::vector<RefInfo> getReads() const { return b.getReads(); }
+   std::vector<RefInfo> getWrites() const { return b.getWrites(); }
+
+private:
+   bool preorder(const IR::PathExpression *pe) override {
         auto* type = typeMap->getType(pe);
         if (!isPrimitiveType(type)) {
             return true;
@@ -122,12 +122,12 @@ public:
         if (forbidden.count(decl)) {
             return true;
         }
-        BUG_CHECK(!(isRead() && isWrite()), "InOut argument cannot be SSA value");
+        BUG_CHECK(!(isRead() && isWrite()), "ReadWrite context cannot be expressed as a SSA form");
         if (isRead()) {
             b.addRead(pe, decl);
         }
         if (isWrite()) {
-            b.addRead(pe, decl);
+            b.addWrite(pe, decl);
         }
         return true;
     }

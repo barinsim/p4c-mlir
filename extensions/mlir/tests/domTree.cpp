@@ -48,7 +48,7 @@ TEST_F(DomTree, Test_action_with_control_flow) {
     pgm->apply(*b);
     auto all = b->getCFG();
 
-    ASSERT_EQ(all.size(), 1);
+    ASSERT_EQ(all.size(), (std::size_t)1);
     auto* cfgFoo = all.begin()->second;
     ASSERT_TRUE(cfgFoo);
 
@@ -126,7 +126,7 @@ TEST_F(DomTree, Test_action_with_complex_control_flow) {
     pgm->apply(*b);
     auto all = b->getCFG();
 
-    ASSERT_EQ(all.size(), 1);
+    ASSERT_EQ(all.size(), (std::size_t)1);
     auto* cfgFoo = all.begin()->second;
     ASSERT_TRUE(cfgFoo);
 
@@ -231,7 +231,7 @@ TEST_F(DomTree, Test_fall_through_switch_statement) {
     pgm->apply(*b);
     auto all = b->getCFG();
 
-    ASSERT_EQ(all.size(), 4);
+    ASSERT_EQ(all.size(), (std::size_t)4);
     auto* cfgApply = getByName(all, "TopPipe"); // TODO: import this func
     ASSERT_TRUE(cfgApply);
 

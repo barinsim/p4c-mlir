@@ -56,6 +56,7 @@ class CFGBuilder : public Inspector
     bool preorder(const IR::P4Control* control) override;
     bool preorder(const IR::IfStatement* ifStmt) override;
     bool preorder(const IR::SwitchStatement* switchStmt) override;
+    bool preorder(const IR::Declaration_Variable* decl) override;
     bool preorder(const IR::ReturnStatement* ret) override { b.add(ret); return true; }
     bool preorder(const IR::AssignmentStatement* assign) override { b.add(assign); return true; }
     bool preorder(const IR::MethodCallStatement* call) override { b.add(call); return true; }
