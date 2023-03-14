@@ -4,12 +4,17 @@
 
 #include <variant>
 #include <unordered_set>
+#include <unordered_map>
+#include <stack>
+#include <exception>
 #include "ir/ir.h"
 #include "ir/visitor.h"
 #include "ir/dump.h"
 #include "frontends/common/resolveReferences/referenceMap.h"
 #include "frontends/p4/typeMap.h"
 #include "lib/log.h"
+#include "cfgBuilder.h"
+#include "domTree.h"
 
 
 namespace p4mlir {
@@ -100,7 +105,7 @@ class GatherSSAReferences : public Inspector, P4WriteContext
     const P4::TypeMap* typeMap;
     const P4::ReferenceMap* refMap;
 
-    // Output of GatherOutParamScalars
+    // Output of GatherOutArgsScalars
     const std::unordered_set<const IR::IDeclaration*> forbidden;
 
 public:
@@ -135,6 +140,128 @@ private:
     bool preorder(const IR::Declaration* decl) override {
         b.addWrite(decl);
         return true;
+    }
+
+    bool preorder(const IR::IfStatement* ifStmt) override {
+        visit(ifStmt->condition);
+        return false;
+    }
+
+    bool preorder(const IR::SwitchStatement* switchStmt) override {
+        (void)switchStmt;
+        throw std::logic_error("Not implemented");
+        return true;
+    }
+};
+
+
+class SSAInfo
+{
+    using ID = std::size_t;
+
+    struct Phi {
+        std::optional<ID> destination;
+        std::unordered_map<const BasicBlock*, std::optional<ID>> sources;
+    };
+
+    // For each basic block stores its phi nodes.
+    // Each phi node belongs to a variable (IR::Declaration).
+    // Phi node for var V looks like this:
+    //      V = phi(V, ..., V)
+    // 1 argument for each predecessor.
+    std::unordered_map<const BasicBlock*, std::unordered_map<const IR::IDeclaration*, Phi>>
+        phiInfo;
+
+    class Builder {
+        decltype(SSAInfo::phiInfo) phiInfo;
+
+     public:
+        void addPhi(const BasicBlock* bb, const IR::IDeclaration* var) {
+            CHECK_NULL(bb, var);
+            phiInfo[bb].insert({var, Phi()});
+        }
+        bool phiExists(const BasicBlock* bb, const IR::IDeclaration* var) const {
+            CHECK_NULL(bb, var);
+            return phiInfo.count(bb) && phiInfo.at(bb).count(var);
+        }
+        decltype(phiInfo) movePhiInfo() const {
+            return std::move(phiInfo);
+        }
+    };
+
+    Builder b;
+
+public:
+    std::unordered_map<const IR::IDeclaration*, Phi> getPhiInfo(const BasicBlock* bb) const {
+        if (phiInfo.count(bb)) {
+            return phiInfo.at(bb);
+        }
+        return {};
+    }
+
+    SSAInfo(std::pair<const IR::IDeclaration*, const BasicBlock*> cfg,
+            const P4::ReferenceMap* refMap, const P4::TypeMap* typeMap) {
+        CHECK_NULL(cfg.first, cfg.second, refMap, typeMap);
+        auto* entry = cfg.second;
+        auto* func = cfg.first->to<IR::Declaration>();
+        // TODO: pass Declaration instead of the cast
+        BUG_CHECK(func, "");
+
+        // Collect variables that cannot be stored into SSA values
+        GatherOutArgsScalars g(refMap, typeMap);
+        func->to<IR::Declaration>()->apply(g);
+        auto forbidden = g.get();
+
+        // For each variable collect blocks where it is written
+        auto collectWrites = [&]() {
+            std::unordered_map<const IR::IDeclaration*, std::unordered_set<const BasicBlock*>> rv;
+            CFGWalker::forEachBlock(entry, [&](auto* bb) {
+                for (auto* stmt : bb->components) {
+                    GatherSSAReferences refs(typeMap, refMap, forbidden);
+                    stmt->apply(refs);
+                    auto writes = refs.getWrites();
+                    std::for_each(writes.begin(), writes.end(), [&](auto& w) {
+                        rv[w.decl].insert(bb);
+                    });
+                }
+            });
+            return rv;
+        };
+
+        DomTree* domTree = DomTree::fromEntryBlock(entry);
+
+        // Creats phi nodes for a variable 'var' which is written in 'writeBlocks'
+        auto createPhiNodes = [&](const IR::IDeclaration* var,
+                                  const std::unordered_set<const BasicBlock* >& writeBlocks) {
+            std::unordered_set<const BasicBlock*> visited;
+            std::stack<const BasicBlock*> worklist;
+            std::for_each(writeBlocks.begin(), writeBlocks.end(), [&](auto *bb) {
+                worklist.push(bb);
+                visited.insert(bb);
+            });
+            while (!worklist.empty()) {
+                auto* curr = worklist.top();
+                worklist.pop();
+                auto domFrontier = domTree->domFrontier(curr);
+                for (auto* bb : domFrontier) {
+                    if (b.phiExists(bb, var)) {
+                        continue;
+                    }
+                    b.addPhi(bb, var);
+                    if (!visited.count(bb)) {
+                        visited.insert(bb);
+                        worklist.push(bb);
+                    }
+                }
+            }
+        };
+
+        auto declToBlocks = collectWrites();
+        for (auto& [decl, blocks] : declToBlocks) {
+            createPhiNodes(decl, blocks);
+        }
+
+        phiInfo = b.movePhiInfo();
     }
 };
 

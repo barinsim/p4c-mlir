@@ -17,6 +17,61 @@ namespace p4mlir::tests {
 class SSAInfo : public Test::P4CTest { };
 
 
+TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action) {
+    std::string src = P4_SOURCE(R"(
+        action foo() {
+            int<16> x = 3;
+            int<16> res;
+            if (x > 3) {
+                x = 2;
+            } else {
+                x = 1;
+            }
+            res = x;
+            return;
+        }
+    )");
+    auto* program = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
+    ASSERT_TRUE(program && ::errorCount() == 0);
+
+    auto* refMap = new P4::ReferenceMap();
+    auto* typeMap = new P4::TypeMap();
+    program = program->apply(P4::ResolveReferences(refMap));
+    program = program->apply(P4::TypeInference(refMap, typeMap, false, true));
+    program = program->apply(P4::TypeChecking(refMap, typeMap, true));
+    ASSERT_TRUE(program && ::errorCount() == 0);
+
+    auto* cfgBuilder = new p4mlir::CFGBuilder();
+    program->apply(*cfgBuilder);
+    auto cfg = cfgBuilder->getCFG();
+    ASSERT_EQ(cfg.size(), (std::size_t)1);
+    ASSERT_TRUE(::errorCount() == 0);
+
+    p4mlir::SSAInfo ssaInfo(*cfg.begin(), refMap, typeMap);
+    ASSERT_TRUE(::errorCount() == 0);
+
+    auto* foo = getByName(cfg, "foo");
+
+    auto names = [](auto decls) {
+        std::unordered_set<cstring> res;
+        for (auto[d, p] : decls) {
+            res.insert(d->getName().name);
+        }
+        return res;
+    };
+
+    using unordered = std::unordered_set<cstring>;
+    EXPECT_EQ(names(ssaInfo.getPhiInfo(getByStmtString(foo, "res = x;"))),
+              unordered({"x"}));
+    EXPECT_EQ(names(ssaInfo.getPhiInfo(getByStmtString(foo, "int<16> x = (int<16>)16s3;"))),
+              unordered({}));
+    EXPECT_EQ(names(ssaInfo.getPhiInfo(getByStmtString(foo, "x = (int<16>)16s2;"))),
+              unordered({}));
+    EXPECT_EQ(names(ssaInfo.getPhiInfo(getByStmtString(foo, "x = (int<16>)16s1;"))),
+              unordered({}));
+}
+
+
 TEST_F(SSAInfo, Correctly_detect_SSA_reads_and_writes_considering_out_args) {
     std::string src = P4_SOURCE(R"(
         extern int<16> bar1(inout int<16> x1, in int<16> x2);
