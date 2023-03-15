@@ -238,6 +238,15 @@ public:
         return {};
     }
 
+    bool isSSARef(std::variant<const IR::IDeclaration *, const IR::PathExpression *> ref) const {
+        return ssaRefIDs.count(ref);
+    }
+
+    ID getID(std::variant<const IR::IDeclaration *, const IR::PathExpression *> ref) const {
+        BUG_CHECK(isSSARef(ref), "Reference is not an SSA value");
+        return ssaRefIDs.at(ref);
+    }
+
     SSAInfo(std::pair<const IR::IDeclaration*, const BasicBlock*> cfg,
             const P4::ReferenceMap* refMap, const P4::TypeMap* typeMap) {
         CHECK_NULL(cfg.first, cfg.second, refMap, typeMap);
@@ -311,7 +320,6 @@ public:
 
         phiInfo = b.movePhiInfo();
         ssaRefIDs = b.moveRefsInfo();
-
     }
 
  private:

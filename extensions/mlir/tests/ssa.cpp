@@ -60,15 +60,97 @@ TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action) {
         return res;
     };
 
+    auto* bb1 = getByStmtString(foo, "int<16> x = (int<16>)16s3;");
+    auto* bb2 = getByStmtString(foo, "x = (int<16>)16s2;");
+    auto* bb3 = getByStmtString(foo, "x = (int<16>)16s1;");
+    auto* bb4 = getByStmtString(foo, "res = x;");
+
     using unordered = std::unordered_set<cstring>;
-    EXPECT_EQ(names(ssaInfo.getPhiInfo(getByStmtString(foo, "res = x;"))),
-              unordered({"x"}));
-    EXPECT_EQ(names(ssaInfo.getPhiInfo(getByStmtString(foo, "int<16> x = (int<16>)16s3;"))),
-              unordered({}));
-    EXPECT_EQ(names(ssaInfo.getPhiInfo(getByStmtString(foo, "x = (int<16>)16s2;"))),
-              unordered({}));
-    EXPECT_EQ(names(ssaInfo.getPhiInfo(getByStmtString(foo, "x = (int<16>)16s1;"))),
-              unordered({}));
+    EXPECT_EQ(names(ssaInfo.getPhiInfo(bb1)), unordered({}));
+    EXPECT_EQ(names(ssaInfo.getPhiInfo(bb2)), unordered({}));
+    EXPECT_EQ(names(ssaInfo.getPhiInfo(bb3)), unordered({}));
+    EXPECT_EQ(names(ssaInfo.getPhiInfo(bb4)), unordered({"x"}));
+
+    // action foo() {
+    //     int<16> x$0 = 3;
+    //     int<16> res$0;
+    //     if (x$0 > 3) {
+    //         x$1 = 2;
+    //     } else {
+    //         x$2 = 1;
+    //     }
+    //     x$3 = phi(x$1, x$2)
+    //     res$1 = x$3;
+    //     return;
+    // }
+
+    auto phiInfo = ssaInfo.getPhiInfo(bb4);
+    p4mlir::SSAInfo::Phi phi = phiInfo.begin()->second;
+
+    EXPECT_TRUE(phi.destination.has_value());
+    EXPECT_TRUE(phi.sources.at(bb2).has_value());
+    EXPECT_TRUE(phi.sources.at(bb3).has_value());
+
+    // This relies on a single def/use within a statement
+    auto writeOrReadID = [&](const IR::StatOrDecl* stmt, bool reads) {
+        p4mlir::GatherSSAReferences refs(typeMap, refMap, {});
+        stmt->apply(refs);
+        std::vector<p4mlir::RefInfo> infos;
+        if (reads) {
+            infos = refs.getReads();
+        } else {
+            infos = refs.getWrites();
+        }
+        EXPECT_EQ(infos.size(), (std::size_t)1);
+        auto info = infos.front();
+        EXPECT_TRUE(ssaInfo.isSSARef(info.ref));
+        return ssaInfo.getID(info.ref);
+    };
+    auto writeID = [&](const IR::StatOrDecl* stmt) { return writeOrReadID(stmt, false); };
+    auto readID = [&](const IR::StatOrDecl* stmt) { return writeOrReadID(stmt, true); };
+
+    using ID = p4mlir::SSAInfo::ID;
+
+    // bb1
+    auto stmtIt = bb1->components.begin();
+    // int<16> x$0 = 3;
+    ID x0Def = writeID(*stmtIt);
+    stmtIt++;
+    // int<16> res$0;
+    ID res0Def = writeID(*stmtIt);
+    *stmtIt++;
+    // if (x$0 > 3)
+    ID x0Use = readID(*stmtIt);
+
+    // bb2
+    stmtIt = bb2->components.begin();
+    // x$1 = 2;
+    ID x1Def = writeID(*stmtIt);
+
+    // bb3
+    stmtIt = bb3->components.begin();
+    // x$2 = 1;
+    ID x2Def = writeID(*stmtIt);
+
+    // bb4
+    stmtIt = bb4->components.begin();
+    // x$3 = phi(x$1, x$2)
+    ID x3Def = phi.destination.value();
+    ID x1Use = phi.sources.at(bb2).value();
+    ID x2Use = phi.sources.at(bb3).value();
+    // res$1 = x$3;
+    ID res1Def = writeID(*stmtIt);
+    ID x3Use = readID(*stmtIt);
+
+    EXPECT_EQ(x0Def, x0Use);
+    EXPECT_EQ(x1Def, x1Use);
+    EXPECT_EQ(x2Def, x2Use);
+    EXPECT_EQ(x3Def, x3Use);
+
+    EXPECT_NE(res0Def, res1Def);
+    EXPECT_NE(x0Def, x1Def);
+    EXPECT_NE(x1Def, x2Def);
+    EXPECT_NE(x2Def, x3Def);
 }
 
 
