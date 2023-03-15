@@ -88,7 +88,7 @@ DomTree::DomTree(const BasicBlock* entry) {
     // Creates 'node -> {children}' tree from 'node -> parent' tree
     auto createRevTree = [&](const std::vector<int>& par) {
         std::vector<std::unordered_set<int>> res(par.size());
-        for (int node = 0; node < (int)par.size(); ++node) {
+        for (int node = 0; node < (int)par.size() - 1; ++node) {
             auto status = res[par[node]].insert(node);
             BUG_CHECK(status.second, "Node has multiple identical children");
         }

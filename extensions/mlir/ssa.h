@@ -7,6 +7,8 @@
 #include <unordered_map>
 #include <stack>
 #include <exception>
+#include <optional>
+#include <iterator>
 #include "ir/ir.h"
 #include "ir/visitor.h"
 #include "ir/dump.h"
@@ -157,6 +159,7 @@ private:
 
 class SSAInfo
 {
+ public:
     using ID = std::size_t;
 
     struct Phi {
@@ -164,6 +167,7 @@ class SSAInfo
         std::unordered_map<const BasicBlock*, std::optional<ID>> sources;
     };
 
+ private:
     // For each basic block stores its phi nodes.
     // Each phi node belongs to a variable (IR::Declaration).
     // Phi node for var V looks like this:
@@ -172,24 +176,59 @@ class SSAInfo
     std::unordered_map<const BasicBlock*, std::unordered_map<const IR::IDeclaration*, Phi>>
         phiInfo;
 
+    // Stores ID for each use/def of an SSA value
+    std::unordered_map<std::variant<const IR::IDeclaration *, const IR::PathExpression *>, ID>
+        ssaRefIDs;
+
     class Builder {
         decltype(SSAInfo::phiInfo) phiInfo;
+        decltype(SSAInfo::ssaRefIDs) ssaRefIDs;
 
      public:
         void addPhi(const BasicBlock* bb, const IR::IDeclaration* var) {
             CHECK_NULL(bb, var);
             phiInfo[bb].insert({var, Phi()});
         }
+        void numberRef(ID id, std::variant<const IR::IDeclaration *, const IR::PathExpression *> ref) {
+            BUG_CHECK(!ssaRefIDs.count(ref), "Renumbering SSA reference");
+            ssaRefIDs[ref] = id;
+        }
+        void numberPhiDestination(ID id, const BasicBlock* block, const  IR::IDeclaration* var) {
+            BUG_CHECK(phiInfo.count(block) && phiInfo.at(block).count(var),
+                      "Phi node does not exist");
+            Phi& phi = phiInfo.at(block).at(var);
+            BUG_CHECK(!phi.destination.has_value(),
+                      "Phi node destination should not be numbered at this point");
+            phi.destination = id;
+        }
+        void numberPhiSource(ID id, const BasicBlock *block, const IR::IDeclaration *var,
+                             const BasicBlock *source) {
+            BUG_CHECK(phiInfo.count(block) && phiInfo.at(block).count(var),
+                      "Phi node does not exist");
+            BUG_CHECK(!phiInfo.at(block).at(var).sources[source].has_value(),
+                      "Phi node source should not be numbered at this point");
+            phiInfo.at(block).at(var).sources[source] = id;
+        }
         bool phiExists(const BasicBlock* bb, const IR::IDeclaration* var) const {
             CHECK_NULL(bb, var);
             return phiInfo.count(bb) && phiInfo.at(bb).count(var);
         }
+        std::unordered_set<const IR::IDeclaration*> getPhiInfo(const BasicBlock* bb) const {
+            if (!phiInfo.count(bb)) {
+                return {};
+            }
+            std::unordered_set<const IR::IDeclaration*> decls;
+            std::transform(phiInfo.at(bb).begin(), phiInfo.at(bb).end(),
+                           std::inserter(decls, decls.end()), [](auto &p) { return p.first; });
+            return decls;
+        }
         decltype(phiInfo) movePhiInfo() const {
             return std::move(phiInfo);
         }
+        decltype(ssaRefIDs) moveRefsInfo() const {
+            return std::move(ssaRefIDs);
+        }
     };
-
-    Builder b;
 
 public:
     std::unordered_map<const IR::IDeclaration*, Phi> getPhiInfo(const BasicBlock* bb) const {
@@ -206,6 +245,8 @@ public:
         auto* func = cfg.first->to<IR::Declaration>();
         // TODO: pass Declaration instead of the cast
         BUG_CHECK(func, "");
+
+        Builder b;
 
         // Collect variables that cannot be stored into SSA values
         GatherOutArgsScalars g(refMap, typeMap);
@@ -256,12 +297,72 @@ public:
             }
         };
 
+        auto numberSSAValues = [&]() {
+            std::unordered_map<const IR::IDeclaration*, ID> nextIDs;
+            std::unordered_map<const IR::IDeclaration*, std::stack<ID>> stkIDs;
+            rename(entry, b, nextIDs, stkIDs, domTree, typeMap, refMap, forbidden);
+        };
+
         auto declToBlocks = collectWrites();
         for (auto& [decl, blocks] : declToBlocks) {
             createPhiNodes(decl, blocks);
         }
+        numberSSAValues();
 
         phiInfo = b.movePhiInfo();
+        ssaRefIDs = b.moveRefsInfo();
+
+    }
+
+ private:
+    void rename(const BasicBlock* block, Builder& b,
+                std::unordered_map<const IR::IDeclaration*, ID>& nextIDs,
+                std::unordered_map<const IR::IDeclaration*, std::stack<ID>>& stkIDs,
+                const DomTree* domTree,
+                const P4::TypeMap* typeMap,
+                const P4::ReferenceMap* refMap,
+                const std::unordered_set<const IR::IDeclaration*>& forbidden) const {
+        // This is used to pop the correct number of elements from 'stkIDs'
+        // once we are getting out of the recursion
+        std::unordered_map<const IR::IDeclaration*, std::size_t> IDsAdded;
+
+        auto vars = b.getPhiInfo(block);
+        for (auto* var : vars) {
+            b.numberPhiDestination(nextIDs[var], block, var);
+            stkIDs[var].push(nextIDs[var]);
+            ++IDsAdded[var];
+            ++nextIDs[var];
+        }
+        for (auto* stmt : block->components) {
+            GatherSSAReferences refs(typeMap, refMap, forbidden);
+            stmt->apply(refs);
+            for (RefInfo& read : refs.getReads()) {
+                BUG_CHECK(!stkIDs[read.decl].empty(), "Cannot number SSA use without previous def");
+                b.numberRef(stkIDs[read.decl].top(), read.ref);
+            }
+            for (RefInfo& write : refs.getWrites()) {
+                b.numberRef(nextIDs[write.decl], write.ref);
+                stkIDs[write.decl].push(nextIDs[write.decl]);
+                ++IDsAdded[write.decl];
+                ++nextIDs[write.decl];
+            }
+        }
+        for (auto* succ : block->succs) {
+            auto succVars = b.getPhiInfo(succ);
+            for (auto* var : succVars) {
+                BUG_CHECK(!stkIDs[var].empty(), "Cannot number SSA use without previous def");
+                b.numberPhiSource(stkIDs[var].top(), succ, var, block);
+            }
+        }
+        for (auto* child : domTree->children(block)) {
+            rename(child, b, nextIDs, stkIDs, domTree, typeMap, refMap, forbidden);
+        }
+        for (auto[var, cnt] : IDsAdded) {
+            auto& stk = stkIDs.at(var);
+            while (cnt--) {
+                stk.pop();
+            }
+        }
     }
 };
 
