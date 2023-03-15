@@ -22,15 +22,7 @@
 namespace p4mlir {
 
 
-namespace {
-
-bool isPrimitiveType(const IR::Type *type) {
-    CHECK_NULL(type);
-    return type->is<IR::Type::Bits>() || type->is<IR::Type::Varbits>() ||
-           type->is<IR::Type::Boolean>();
-}
-
-}
+bool isPrimitiveType(const IR::Type *type);
 
 
 class GatherOutArgsScalars : public Inspector, P4WriteContext
@@ -54,22 +46,10 @@ class GatherOutArgsScalars : public Inspector, P4WriteContext
         CHECK_NULL(typeMap_);
     }
 
-    std::unordered_set<const IR::IDeclaration*> get() const {
-        return b.get();
-    }
+    std::unordered_set<const IR::IDeclaration*> get() const { return b.get(); }
 
  private:
-    bool preorder(const IR::PathExpression* pe) override {
-        if (!isWrite() || !findContext<IR::Argument>()) {
-            return true;
-        }
-        auto* type = typeMap->getType(pe);
-        if (isPrimitiveType(type)) {
-            CHECK_NULL(pe);
-            b.add(refMap->getDeclaration(pe->path));
-        }
-        return true;
-    }
+    bool preorder(const IR::PathExpression* pe) override;
 };
 
 
@@ -86,18 +66,9 @@ class GatherSSAReferences : public Inspector, P4WriteContext
         std::vector<RefInfo> reads;
         std::vector<RefInfo> writes;
      public:
-        void addRead(const IR::PathExpression* pe, const IR::IDeclaration* decl) {
-            CHECK_NULL(pe, decl);
-            reads.push_back({pe, decl});
-        }
-        void addWrite(const IR::PathExpression* pe, const IR::IDeclaration* decl) {
-            CHECK_NULL(pe, decl);
-            writes.push_back({pe, decl});
-        }
-        void addWrite(const IR::IDeclaration* decl) {
-             CHECK_NULL(decl);
-             writes.push_back({decl, decl});
-        }
+        void addRead(const IR::PathExpression* pe, const IR::IDeclaration* decl);
+        void addWrite(const IR::PathExpression* pe, const IR::IDeclaration* decl);
+        void addWrite(const IR::IDeclaration* decl);
         std::vector<RefInfo> getReads() const { return reads; };
         std::vector<RefInfo> getWrites() const { return writes; };
     };
@@ -119,41 +90,10 @@ public:
    std::vector<RefInfo> getWrites() const { return b.getWrites(); }
 
 private:
-   bool preorder(const IR::PathExpression *pe) override {
-        auto* type = typeMap->getType(pe);
-        if (!isPrimitiveType(type)) {
-            return true;
-        }
-        CHECK_NULL(pe->path);
-        auto* decl = refMap->getDeclaration(pe->path);
-        if (forbidden.count(decl)) {
-            return true;
-        }
-        BUG_CHECK(!(isRead() && isWrite()), "ReadWrite context cannot be expressed as a SSA form");
-        if (isRead()) {
-            b.addRead(pe, decl);
-        }
-        if (isWrite()) {
-            b.addWrite(pe, decl);
-        }
-        return true;
-    }
-
-    bool preorder(const IR::Declaration* decl) override {
-        b.addWrite(decl);
-        return true;
-    }
-
-    bool preorder(const IR::IfStatement* ifStmt) override {
-        visit(ifStmt->condition);
-        return false;
-    }
-
-    bool preorder(const IR::SwitchStatement* switchStmt) override {
-        (void)switchStmt;
-        throw std::logic_error("Not implemented");
-        return true;
-    }
+    bool preorder(const IR::PathExpression *pe) override;
+    bool preorder(const IR::Declaration* decl) override;
+    bool preorder(const IR::IfStatement* ifStmt) override;
+    bool preorder(const IR::SwitchStatement* switchStmt) override;
 };
 
 
@@ -185,52 +125,22 @@ class SSAInfo
         decltype(SSAInfo::ssaRefIDs) ssaRefIDs;
 
      public:
-        void addPhi(const BasicBlock* bb, const IR::IDeclaration* var) {
-            CHECK_NULL(bb, var);
-            phiInfo[bb].insert({var, Phi()});
-        }
-        void numberRef(ID id, std::variant<const IR::IDeclaration *, const IR::PathExpression *> ref) {
-            BUG_CHECK(!ssaRefIDs.count(ref), "Renumbering SSA reference");
-            ssaRefIDs[ref] = id;
-        }
-        void numberPhiDestination(ID id, const BasicBlock* block, const  IR::IDeclaration* var) {
-            BUG_CHECK(phiInfo.count(block) && phiInfo.at(block).count(var),
-                      "Phi node does not exist");
-            Phi& phi = phiInfo.at(block).at(var);
-            BUG_CHECK(!phi.destination.has_value(),
-                      "Phi node destination should not be numbered at this point");
-            phi.destination = id;
-        }
+        void addPhi(const BasicBlock* bb, const IR::IDeclaration* var);
+        void numberRef(ID id, std::variant<const IR::IDeclaration *, const IR::PathExpression *> ref);
+        void numberPhiDestination(ID id, const BasicBlock* block, const  IR::IDeclaration* var);
         void numberPhiSource(ID id, const BasicBlock *block, const IR::IDeclaration *var,
-                             const BasicBlock *source) {
-            BUG_CHECK(phiInfo.count(block) && phiInfo.at(block).count(var),
-                      "Phi node does not exist");
-            BUG_CHECK(!phiInfo.at(block).at(var).sources[source].has_value(),
-                      "Phi node source should not be numbered at this point");
-            phiInfo.at(block).at(var).sources[source] = id;
-        }
-        bool phiExists(const BasicBlock* bb, const IR::IDeclaration* var) const {
-            CHECK_NULL(bb, var);
-            return phiInfo.count(bb) && phiInfo.at(bb).count(var);
-        }
-        std::unordered_set<const IR::IDeclaration*> getPhiInfo(const BasicBlock* bb) const {
-            if (!phiInfo.count(bb)) {
-                return {};
-            }
-            std::unordered_set<const IR::IDeclaration*> decls;
-            std::transform(phiInfo.at(bb).begin(), phiInfo.at(bb).end(),
-                           std::inserter(decls, decls.end()), [](auto &p) { return p.first; });
-            return decls;
-        }
-        decltype(phiInfo) movePhiInfo() const {
-            return std::move(phiInfo);
-        }
-        decltype(ssaRefIDs) moveRefsInfo() const {
-            return std::move(ssaRefIDs);
-        }
+                             const BasicBlock *source);
+        bool phiExists(const BasicBlock* bb, const IR::IDeclaration* var) const;
+        std::unordered_set<const IR::IDeclaration*> getPhiInfo(const BasicBlock* bb) const;
+
+        decltype(phiInfo) movePhiInfo() const { return std::move(phiInfo); }
+        decltype(ssaRefIDs) moveRefsInfo() const { return std::move(ssaRefIDs); }
     };
 
 public:
+    SSAInfo(std::pair<const IR::IDeclaration*, const BasicBlock*> cfg,
+            const P4::ReferenceMap* refMap, const P4::TypeMap* typeMap);
+
     std::unordered_map<const IR::IDeclaration*, Phi> getPhiInfo(const BasicBlock* bb) const {
         if (phiInfo.count(bb)) {
             return phiInfo.at(bb);
@@ -247,81 +157,6 @@ public:
         return ssaRefIDs.at(ref);
     }
 
-    SSAInfo(std::pair<const IR::IDeclaration*, const BasicBlock*> cfg,
-            const P4::ReferenceMap* refMap, const P4::TypeMap* typeMap) {
-        CHECK_NULL(cfg.first, cfg.second, refMap, typeMap);
-        auto* entry = cfg.second;
-        auto* func = cfg.first->to<IR::Declaration>();
-        // TODO: pass Declaration instead of the cast
-        BUG_CHECK(func, "");
-
-        Builder b;
-
-        // Collect variables that cannot be stored into SSA values
-        GatherOutArgsScalars g(refMap, typeMap);
-        func->to<IR::Declaration>()->apply(g);
-        auto forbidden = g.get();
-
-        // For each variable collect blocks where it is written
-        auto collectWrites = [&]() {
-            std::unordered_map<const IR::IDeclaration*, std::unordered_set<const BasicBlock*>> rv;
-            CFGWalker::forEachBlock(entry, [&](auto* bb) {
-                for (auto* stmt : bb->components) {
-                    GatherSSAReferences refs(typeMap, refMap, forbidden);
-                    stmt->apply(refs);
-                    auto writes = refs.getWrites();
-                    std::for_each(writes.begin(), writes.end(), [&](auto& w) {
-                        rv[w.decl].insert(bb);
-                    });
-                }
-            });
-            return rv;
-        };
-
-        DomTree* domTree = DomTree::fromEntryBlock(entry);
-
-        // Creats phi nodes for a variable 'var' which is written in 'writeBlocks'
-        auto createPhiNodes = [&](const IR::IDeclaration* var,
-                                  const std::unordered_set<const BasicBlock* >& writeBlocks) {
-            std::unordered_set<const BasicBlock*> visited;
-            std::stack<const BasicBlock*> worklist;
-            std::for_each(writeBlocks.begin(), writeBlocks.end(), [&](auto *bb) {
-                worklist.push(bb);
-                visited.insert(bb);
-            });
-            while (!worklist.empty()) {
-                auto* curr = worklist.top();
-                worklist.pop();
-                auto domFrontier = domTree->domFrontier(curr);
-                for (auto* bb : domFrontier) {
-                    if (b.phiExists(bb, var)) {
-                        continue;
-                    }
-                    b.addPhi(bb, var);
-                    if (!visited.count(bb)) {
-                        visited.insert(bb);
-                        worklist.push(bb);
-                    }
-                }
-            }
-        };
-
-        auto numberSSAValues = [&]() {
-            std::unordered_map<const IR::IDeclaration*, ID> nextIDs;
-            std::unordered_map<const IR::IDeclaration*, std::stack<ID>> stkIDs;
-            rename(entry, b, nextIDs, stkIDs, domTree, typeMap, refMap, forbidden);
-        };
-
-        auto declToBlocks = collectWrites();
-        for (auto& [decl, blocks] : declToBlocks) {
-            createPhiNodes(decl, blocks);
-        }
-        numberSSAValues();
-
-        phiInfo = b.movePhiInfo();
-        ssaRefIDs = b.moveRefsInfo();
-    }
-
  private:
     void rename(const BasicBlock* block, Builder& b,
                 std::unordered_map<const IR::IDeclaration*, ID>& nextIDs,
@@ -329,49 +164,7 @@ public:
                 const DomTree* domTree,
                 const P4::TypeMap* typeMap,
                 const P4::ReferenceMap* refMap,
-                const std::unordered_set<const IR::IDeclaration*>& forbidden) const {
-        // This is used to pop the correct number of elements from 'stkIDs'
-        // once we are getting out of the recursion
-        std::unordered_map<const IR::IDeclaration*, std::size_t> IDsAdded;
-
-        auto vars = b.getPhiInfo(block);
-        for (auto* var : vars) {
-            b.numberPhiDestination(nextIDs[var], block, var);
-            stkIDs[var].push(nextIDs[var]);
-            ++IDsAdded[var];
-            ++nextIDs[var];
-        }
-        for (auto* stmt : block->components) {
-            GatherSSAReferences refs(typeMap, refMap, forbidden);
-            stmt->apply(refs);
-            for (RefInfo& read : refs.getReads()) {
-                BUG_CHECK(!stkIDs[read.decl].empty(), "Cannot number SSA use without previous def");
-                b.numberRef(stkIDs[read.decl].top(), read.ref);
-            }
-            for (RefInfo& write : refs.getWrites()) {
-                b.numberRef(nextIDs[write.decl], write.ref);
-                stkIDs[write.decl].push(nextIDs[write.decl]);
-                ++IDsAdded[write.decl];
-                ++nextIDs[write.decl];
-            }
-        }
-        for (auto* succ : block->succs) {
-            auto succVars = b.getPhiInfo(succ);
-            for (auto* var : succVars) {
-                BUG_CHECK(!stkIDs[var].empty(), "Cannot number SSA use without previous def");
-                b.numberPhiSource(stkIDs[var].top(), succ, var, block);
-            }
-        }
-        for (auto* child : domTree->children(block)) {
-            rename(child, b, nextIDs, stkIDs, domTree, typeMap, refMap, forbidden);
-        }
-        for (auto[var, cnt] : IDsAdded) {
-            auto& stk = stkIDs.at(var);
-            while (cnt--) {
-                stk.pop();
-            }
-        }
-    }
+                const std::unordered_set<const IR::IDeclaration*>& forbidden) const;
 };
 
 
