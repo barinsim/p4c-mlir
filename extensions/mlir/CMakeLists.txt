@@ -26,6 +26,6 @@ set (
 )
 
 add_executable(p4c-mlir-gtest ${GTEST_MLIR_SOURCES})
-target_link_libraries (p4c-mlir-gtest ${P4C_LIBRARIES} ${P4C_LIB_DEPS} p4c-mlir-lib gtest)
+target_link_libraries(p4c-mlir-gtest ${P4C_LIBRARIES} ${P4C_LIB_DEPS} p4c-mlir-lib gtest)
 
 add_subdirectory(mlir)

@@ -22,9 +22,7 @@ target_link_libraries(p4c-mlir-translate
   MLIRTranslateLib
   MLIRSupport
 
-  # Provides p4 parsing and ssa conversion.
-  # SYSTEM kw is used to suppress warnings from p4c headers.
-  SYSTEM
+  # Provides p4 parsing, ssa conversion and other AST utilities.
   p4c-mlir-lib
 )
 
