@@ -2,6 +2,7 @@
 #define STANDALONE_DIALECT
 
 include "mlir/IR/OpBase.td"
+include "mlir/IR/BuiltinAttributes.td"
 
 //===----------------------------------------------------------------------===//
 // Standalone dialect definition.
