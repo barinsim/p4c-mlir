@@ -13,6 +13,9 @@ mlirGen(mlir::MLIRContext& context, const IR::P4Program* program) {
     MLIRGen gen(builder);
     program->apply(gen);
 
+    if (!program || ::errorCount() > 0) {
+        return nullptr;
+    }
     if (failed(mlir::verify(moduleOp))) {
       moduleOp.emitError("module verification error");
       return nullptr;

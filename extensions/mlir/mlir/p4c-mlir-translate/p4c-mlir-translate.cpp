@@ -6,8 +6,6 @@
 
 
 const IR::P4Program* parseP4(int argc, char** argv) {
-    AutoCompileContext acc(new P4CContextWithOptions<CompilerOptions>);
-
     auto& context = P4CContextWithOptions<CompilerOptions>::get();
     auto& options = context.options();
 
@@ -18,8 +16,6 @@ const IR::P4Program* parseP4(int argc, char** argv) {
     }
 
     auto* program = P4::parseP4File(options);
-
-    // ::errorCount() must be called before the compile context is popped
     if (!program || ::errorCount() > 0) {
         return nullptr;
     }
@@ -28,6 +24,8 @@ const IR::P4Program* parseP4(int argc, char** argv) {
 
 
 int main(int argc, char** argv) {
+    AutoCompileContext acc(new P4CContextWithOptions<CompilerOptions>);
+
     const IR::P4Program* program = parseP4(argc, argv);
     if (!program) {
         return 1;

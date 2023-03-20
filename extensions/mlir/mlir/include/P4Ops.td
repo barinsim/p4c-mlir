@@ -4,18 +4,21 @@
 include "P4Dialect.td"
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/IR/OpBase.td"
+include "mlir/IR/BuiltinTypes.td"
 
 
 def ConstantOp : P4Op<"constant"> {
-    let arguments = (ins  I32Attr:$value);
-    let results = (outs I32:$result);
+    // TODO: for some reason these must be prefixed with Builtin_
+    let arguments = (ins Builtin_IntegerAttr:$value);
+    let results = (outs Builtin_Integer:$result);
     let hasVerifier = 1;
 
     let builders = [
-    // Build a constant with a given constant int value. This builder
-    // creates a declaration for `ConstantOp::build` with the given parameters.
-    OpBuilder<(ins "int":$value)>
-  ];
+        OpBuilder<(ins "mlir::Type":$type, "int64_t":$value), [{
+            build($_builder, $_state, type, ::mlir::IntegerAttr::get(type, value));
+        }]>
+    ];
 }
 
 #endif // STANDALONE_OPS
