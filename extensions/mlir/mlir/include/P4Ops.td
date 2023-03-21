@@ -21,4 +21,21 @@ def ConstantOp : P4Op<"constant"> {
     ];
 }
 
+
+def ActionOp : P4Op<"action"> {
+  let arguments = (ins SymbolNameAttr:$sym_name);
+  let regions = (region MinSizedRegion<1>:$body);
+
+  // let builders = [OpBuilder<(ins
+  //   "StringRef":$name, "FunctionType":$type,
+  //   CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs,
+  //   CArg<"ArrayRef<DictionaryAttr>", "{}">:$argAttrs)
+  // >];
+}
+
+
+def ReturnOp : P4Op<"return", [Pure, HasParent<"ActionOp">,
+                                 Terminator]> {
+}
+
 #endif // STANDALONE_OPS

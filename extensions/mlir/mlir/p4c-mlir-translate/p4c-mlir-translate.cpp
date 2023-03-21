@@ -38,6 +38,6 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    moduleOp->dump();
+    moduleOp->print(llvm::outs());
     return 0;
 }

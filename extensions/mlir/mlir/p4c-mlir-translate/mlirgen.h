@@ -38,8 +38,17 @@ class MLIRGenImpl : public Inspector
 
  private:
     bool preorder(const IR::P4Action* action) override {
-        // builder.create<p4mlir::ConstantOp>(loc(action), 42);
-        return true;
+        ::llvm::StringRef name(action->getName().toString());
+        auto actOp = builder.create<p4mlir::ActionOp>(loc(action), name);
+        auto& entryBlock = actOp.getBody().emplaceBlock();
+        BUG_CHECK(actOp.getBody().hasOneBlock(), "Entry region should have 1 block at this point");
+        auto parent = builder.getBlock();
+        builder.setInsertionPointToStart(&entryBlock);
+        // debug
+        visit(action->body);
+        builder.create<p4mlir::ReturnOp>(loc(action));
+        builder.setInsertionPointToEnd(parent);
+        return false;
     }
 
     void postorder(const IR::Constant* cst) override {
