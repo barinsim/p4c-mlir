@@ -53,7 +53,7 @@ void CFGBuilder::end_apply(const IR::Node*) {
 }
 
 bool CFGBuilder::preorder(const IR::P4Action* action) {
-    BUG_CHECK(!b.callableToCFG.count(action), "");
+    BUG_CHECK(!b.callableToCFG.count(action), "Action already visited");
     BasicBlock* entryBlock = new BasicBlock();
     b.enterBasicBlock(entryBlock);
     b.callableToCFG.insert({action, entryBlock});

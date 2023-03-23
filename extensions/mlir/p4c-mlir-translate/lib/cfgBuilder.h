@@ -23,6 +23,15 @@ std::string toString(const BasicBlock* bb, int indent = 0);
 class CFGBuilder : public Inspector 
 {
  public:
+    using CFGType = std::map<const IR::IDeclaration*, BasicBlock*>;
+
+ public:
+    // This ctr allows usage within a PassManager where 'cfg' is input further down the pipeline
+    CFGBuilder(CFGType& cfg) : b(cfg) {}
+
+    // Relies on the garbage collector
+    CFGBuilder() : b(*(new CFGType())) {}
+
     std::map<const IR::IDeclaration*, BasicBlock*> getCFG() const {
         return b.callableToCFG;
     }
@@ -32,7 +41,8 @@ class CFGBuilder : public Inspector
     {
         BasicBlock* curr = nullptr;
     public:
-        std::map<const IR::IDeclaration*, BasicBlock*> callableToCFG;
+        Builder(CFGType& cfg) : callableToCFG(cfg) {}
+        CFGBuilder::CFGType& callableToCFG;
         BasicBlock* current() { return curr; }
         void add(const IR::StatOrDecl* item);
         void addSuccessor(BasicBlock* succ);
@@ -42,7 +52,7 @@ class CFGBuilder : public Inspector
     Builder b;
 
     Visitor::profile_t init_apply(const IR::Node *node) override {
-        b = Builder();
+        b.callableToCFG.clear();
         return Inspector::init_apply(node);
     }
 
