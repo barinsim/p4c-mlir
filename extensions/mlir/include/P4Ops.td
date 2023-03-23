@@ -32,6 +32,8 @@ def ActionOp : P4Op<"action"> {
 
 def ReturnOp : P4Op<"return", [Pure, HasParent<"ActionOp">,
                                  Terminator]> {
+    let assemblyFormat = "attr-dict";
 }
+
 
 #endif // STANDALONE_OPS

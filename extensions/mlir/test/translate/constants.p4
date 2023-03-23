@@ -4,7 +4,7 @@
 // CHECK-LABEL: module
 // CHECK: p4.action
 action foo() {
-    // CHECK-NEXT: p4.constant -5 : si10
+    // CHECK-NEXT: {{%[0-9]+}} = p4.constant -5 : si10
     int<10> x = -5;
     // CHECK-NEXT: p4.return
     return;
@@ -12,7 +12,7 @@ action foo() {
 
 // CHECK: p4.action
 action bar() {
-    // CHECK-NEXT: p4.constant 19 : ui100
+    // CHECK-NEXT: {{%[0-9]+}} = p4.constant 19 : ui100
     bit<100> x = 19;
     // CHECK-NEXT: p4.return
     return;

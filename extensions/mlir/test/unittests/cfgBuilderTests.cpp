@@ -711,6 +711,39 @@ TEST_F(CFGBuilder, Test_wierd_fall_through_switch_statement_without_default) {
 }
 
 
+TEST_F(CFGBuilder, Test_empty_if_statement) {
+    std::string src = P4_SOURCE(R"(
+        action foo() {
+            if (true) {
+
+            } else {
+
+            }
+            return;
+        }
+    )");
+    auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
+    ASSERT_TRUE(pgm && ::errorCount() == 0);
+
+    auto b = new p4mlir::CFGBuilder;
+    pgm->apply(*b);
+    auto all = b->getCFG();
+
+    ASSERT_EQ(all.size(), (std::size_t)1);
+    auto* cfgFoo = getByName(all, "foo");
+
+    CFG_EXPECT_FUZZY_EQ(cfgFoo,
+        R"(bb^1
+            if (true)
+            successors: bb^2
+
+           bb^2
+            return;
+        )"
+    );
+}
+
+
 // TEST_F(CFGBuilder, Test_switch_statement_with_empty_cases) {
 //     std::string src = P4_SOURCE(R"(
 //         struct Parsed_packet {}

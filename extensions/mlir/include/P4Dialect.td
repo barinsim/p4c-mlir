@@ -13,6 +13,7 @@ def P4Dialect : Dialect {
     let summary = "A p4 out-of-tree MLIR dialect.";
     let description = [{Test p4 mlir dialect description}];
     let cppNamespace = "p4mlir";
+    let dependentDialects = ["::mlir::cf::ControlFlowDialect"];
 
     let useFoldAPI = kEmitFoldAdaptorFolder;
 }

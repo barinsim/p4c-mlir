@@ -11,4 +11,5 @@ add_mlir_dialect_library(MLIRP4Dialect
         LINK_LIBS
         MLIRIR
         MLIRInferTypeOpInterface
+        MLIRControlFlowDialect
 )

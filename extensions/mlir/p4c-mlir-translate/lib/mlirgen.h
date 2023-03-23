@@ -1,6 +1,7 @@
 #include "ir/visitor.h"
 #include "ir/ir.h"
 #include "ir/pass_manager.h"
+#include "ir/dump.h"
 
 #include "lib/ordered_map.h"
 
@@ -46,7 +47,10 @@ mlir::Type toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) {
         auto sign = bits->isSigned ? mlir::IntegerType::Signed : mlir::IntegerType::Unsigned;
         int size = bits->size;
         return mlir::IntegerType::get(builder.getContext(), size, sign);
+    } else if (p4type->is<IR::Type_Boolean>()) {
+        return mlir::IntegerType::get(builder.getContext(), 1, mlir::IntegerType::Signless);
     }
+
     throw std::domain_error("Not implemented");
     return nullptr;
 }
@@ -59,24 +63,106 @@ class MLIRGenImplCFG : public Inspector
 {
     mlir::OpBuilder& builder;
 
+    BasicBlock* currBlock = nullptr;
+
+    std::unordered_map<const IR::Expression*, mlir::Value> exprToValue;
+
+    const std::unordered_map<const BasicBlock*, mlir::Block*>& blocksMapping;
+
     const P4::TypeMap* typeMap = nullptr;
 
+    // This is an internal flag that makes sure this visitor was started properly
+    // using custom 'apply' method instead of the usual `node->apply(visitor)`
+    bool customApplyCalled = false;
+
  public:
-    MLIRGenImplCFG(mlir::OpBuilder &builder_, const P4::TypeMap *typeMap_)
-        : builder(builder_), typeMap(typeMap_) {}
+    MLIRGenImplCFG(mlir::OpBuilder &builder_,
+                   const std::unordered_map<const BasicBlock *, mlir::Block *> &blocksMapping_,
+                   const P4::TypeMap *typeMap_)
+        : builder(builder_), blocksMapping(blocksMapping_), typeMap(typeMap_) {
+            CHECK_NULL(typeMap);
+        }
+
+    // This is the main way to run this visitor, 'stmt' must be part of 'bb's components,
+    // otherwise a terminator will not be able to map the successors onto MLIR blocks properly
+    void apply(const IR::StatOrDecl* stmt, BasicBlock* bb) {
+        CHECK_NULL(stmt, bb);
+        currBlock = bb;
+        customApplyCalled = true;
+        stmt->apply(*this);
+        customApplyCalled = false;
+    }
 
  private:
+    Visitor::profile_t init_apply(const IR::Node *node) override {
+        BUG_CHECK(customApplyCalled, "Visitor was not started properly");
+        return Inspector::init_apply(node);
+    }
+
+    void postorder(const IR::BoolLiteral* boolean) override {
+        auto type = toMLIRType(builder, typeMap->getType(boolean));
+        CHECK_NULL(type);
+        mlir::Value val = builder.create<p4mlir::ConstantOp>(loc(builder, boolean), type,
+                                                             (int64_t)boolean->value);
+        addValue(boolean, val);
+        return;
+    }
+
     void postorder(const IR::Constant* cst) override {
         auto type = toMLIRType(builder, typeMap->getType(cst));
         CHECK_NULL(type);
         BUG_CHECK(cst->fitsInt64(), "Not implemented");
-        builder.create<p4mlir::ConstantOp>(loc(builder, cst), type, cst->asInt64());
+        mlir::Value val =
+            builder.create<p4mlir::ConstantOp>(loc(builder, cst), type, cst->asInt64());
+        addValue(cst, val);
         return;
     }
 
     void postorder(const IR::ReturnStatement* ret) override {
         builder.create<p4mlir::ReturnOp>(loc(builder, ret));
     }
+
+    bool preorder(const IR::IfStatement* ifStmt) override {
+        visit(ifStmt->condition);
+        mlir::Value cond = toValue(ifStmt->condition);
+        // TODO: remove the magic constants
+        mlir::Block* tBlock = getMLIRBlock(currBlock->succs.at(0));
+        mlir::Block* fBlock;
+
+        // There are some wierd cases where if stmt can have 1 successor,
+        // in that case set both targets to the same block,
+        // mlir::cf::CondBranchOp can handle that
+        // TODO: it stems from the canonicalization of the CFG, remove it
+        if (currBlock->succs.size() == 1) {
+            fBlock = getMLIRBlock(currBlock->succs.at(0));
+            int i = 0;
+        } else {
+            fBlock = tBlock;
+        }
+
+        // TODO: make p4.cond?
+        builder.create<mlir::cf::CondBranchOp>(loc(builder, ifStmt), cond, tBlock,
+                                               mlir::ValueRange(), fBlock, mlir::ValueRange());
+        return false;
+
+    }
+
+ private:
+    void addValue(const IR::Expression* expr, mlir::Value value) {
+        BUG_CHECK(!exprToValue.count(expr), "Expression already has a value");
+        exprToValue.insert({expr, value});
+    }
+
+    mlir::Value toValue(const IR::Expression* expr) const {
+        BUG_CHECK(exprToValue.count(expr), "Could not retrive a value for the expression");
+        return exprToValue.at(expr);
+    }
+
+    mlir::Block* getMLIRBlock(const BasicBlock* p4block) const {
+        BUG_CHECK(blocksMapping.count(p4block), "Could not retrieve corresponding MLIR block");
+        return blocksMapping.at(p4block);
+    }
+
 };
 
 
@@ -100,21 +186,21 @@ class MLIRGenImpl : public Inspector
 
         // For each BasicBlock create MLIR Block and insert it into the ActionOp region
         BUG_CHECK(cfg.count(action), "Could not retrive cfg");
-        ordered_map<BasicBlock*, mlir::Block*> mapping;
+        std::unordered_map<const BasicBlock*, mlir::Block*> mapping;
         CFGWalker::preorder(cfg.at(action), [&](BasicBlock* bb) {
             auto& block = actOp.getBody().emplaceBlock();
             mapping.insert({bb, &block});
         });
 
         // Fill the MLIR Blocks with Ops
-        MLIRGenImplCFG cfgGen(builder, typeMap);
+        MLIRGenImplCFG cfgGen(builder, mapping, typeMap);
         CFGWalker::preorder(cfg.at(action), [&](BasicBlock* bb) {
             BUG_CHECK(mapping.count(bb), "Could not retrive MLIR block");
             auto* block = mapping.at(bb);
             builder.setInsertionPointToStart(block);
             auto& comps = bb->components;
             std::for_each(comps.begin(), comps.end(), [&](auto* stmt) {
-                stmt->apply(cfgGen);
+                cfgGen.apply(stmt, bb);
             });
         });
 
