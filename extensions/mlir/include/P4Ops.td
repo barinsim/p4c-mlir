@@ -12,7 +12,9 @@ def ConstantOp : P4Op<"constant"> {
     // TODO: for some reason these must be prefixed with Builtin_
     let arguments = (ins Builtin_IntegerAttr:$value);
     let results = (outs Builtin_Integer:$result);
+
     let hasVerifier = 1;
+    let hasCustomAssemblyFormat = 1;
 
     let builders = [
         OpBuilder<(ins "mlir::Type":$type, "int64_t":$value), [{
@@ -25,12 +27,6 @@ def ConstantOp : P4Op<"constant"> {
 def ActionOp : P4Op<"action"> {
   let arguments = (ins SymbolNameAttr:$sym_name);
   let regions = (region MinSizedRegion<1>:$body);
-
-  // let builders = [OpBuilder<(ins
-  //   "StringRef":$name, "FunctionType":$type,
-  //   CArg<"ArrayRef<NamedAttribute>", "{}">:$attrs,
-  //   CArg<"ArrayRef<DictionaryAttr>", "{}">:$argAttrs)
-  // >];
 }
 
 

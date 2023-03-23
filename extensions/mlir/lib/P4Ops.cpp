@@ -6,7 +6,10 @@
 #include "P4Ops.cpp.inc"
 
 
-mlir::LogicalResult p4mlir::ConstantOp::verify() {
+namespace p4mlir {
+
+
+mlir::LogicalResult ConstantOp::verify() {
     if (getValueAttr().getType() == getResult().getType()) {
         return mlir::success();
     }
@@ -16,3 +19,24 @@ mlir::LogicalResult p4mlir::ConstantOp::verify() {
         "attribute 'value' failed to satisfy constraint: Attribute and result value "
         "must have a same type");
 }
+
+
+mlir::ParseResult ConstantOp::parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {
+    mlir::IntegerAttr value;
+    if (parser.parseOptionalAttrDict(result.attributes) ||
+        parser.parseAttribute(value, "value", result.attributes))
+        return mlir::failure();
+
+    result.addTypes(value.getType());
+    return mlir::success();
+}
+
+
+void ConstantOp::print(mlir::OpAsmPrinter &printer) {
+    printer << " ";
+    printer.printOptionalAttrDict((*this)->getAttrs(), {"value"});
+    printer << getValue();
+}
+
+
+} // namespace p4mlir
