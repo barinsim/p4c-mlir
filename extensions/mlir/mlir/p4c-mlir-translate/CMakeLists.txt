@@ -1,32 +1,10 @@
-set(LLVM_LINK_COMPONENTS
-  Support
-)
+add_subdirectory(lib)
+add_subdirectory(debug)
 
-get_property(dialect_libs GLOBAL PROPERTY MLIR_DIALECT_LIBS)
-get_property(translation_libs GLOBAL PROPERTY MLIR_TRANSLATION_LIBS)
-
-# TODO: convert the translation code into add_mlir_translation_library
-
-add_llvm_executable(p4c-mlir-translate
-    p4c-mlir-translate.cpp
-    mlirgen.cpp
-)
-
+add_llvm_executable(p4c-mlir-translate p4c-mlir-translate.cpp)
 llvm_update_compile_flags(p4c-mlir-translate)
-
-target_link_libraries(p4c-mlir-translate
-  PRIVATE
-  ${dialect_libs}
-  ${translation_libs}
-  MLIRIR
-  MLIRParser
-  MLIRPass
-  MLIRSPIRVDialect
-  MLIRTranslateLib
-  MLIRSupport
-
-  # Provides p4 parsing, ssa conversion and other AST utilities.
-  p4c-mlir-lib
-)
+target_link_libraries(p4c-mlir-translate p4c-mlir-translate-lib)
 
 mlir_check_link_libraries(p4c-mlir-translate)
+
+

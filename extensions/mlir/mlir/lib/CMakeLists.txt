@@ -8,7 +8,7 @@ add_mlir_dialect_library(MLIRP4Dialect
         DEPENDS
         MLIRP4OpsIncGen
 
-	    LINK_LIBS PUBLIC
-	    MLIRIR
+        LINK_LIBS
+        MLIRIR
         MLIRInferTypeOpInterface
 )

@@ -21,13 +21,10 @@ config.name = 'P4C-MLIR'
 config.test_format = lit.formats.ShTest(not llvm_config.use_lit_shell)
 
 # suffixes: A list of file extensions to treat as test files.
-config.suffixes = ['.mlir', '.p4']
+config.suffixes = ['.mlir', '.p4', '.sh']
 
 # test_source_root: The root path where tests are located.
 config.test_source_root = os.path.dirname(__file__)
-
-# test_exec_root: The root path where tests should be run.
-config.test_exec_root = os.path.join(config.p4c_mlir_obj_root, 'test')
 
 config.substitutions.append(('%PATH%', config.environment['PATH']))
 
@@ -43,16 +40,14 @@ config.excludes = ['Inputs', 'Examples', 'CMakeLists.txt', 'README.txt', 'LICENS
 
 # test_exec_root: The root path where tests should be run.
 config.test_exec_root = os.path.join(config.p4c_mlir_obj_root, 'test')
+
 config.p4c_mlir_tools_dir = os.path.join(config.p4c_mlir_obj_root, 'bin')
 
 # Tweak the PATH to include the tools dir.
 llvm_config.with_environment('PATH', config.llvm_tools_dir, append_path=True)
 
-tool_dirs = [config.p4c_mlir_tools_dir, config.llvm_tools_dir]
-tools = ['p4c-mlir-translate']
+gtest_dir = os.path.join(config.p4c_mlir_obj_root, 'test', 'unittests')
+tool_dirs = [config.p4c_mlir_tools_dir, config.llvm_tools_dir, gtest_dir]
+tools = ['p4c-mlir-translate', 'p4c-mlir-gtest']
 
 llvm_config.add_tool_substitutions(tools, tool_dirs)
-
-# llvm_config.with_environment('PYTHONPATH', [
-#     os.path.join(config.mlir_obj_dir, 'python_packages', 'p4c-mlir'),
-# ], append_path=True)

@@ -4,7 +4,7 @@
 #include "test/gtest/helpers.h"
 #include "frontends/common/parseInput.h"
 #include "common.h"
-#include "../cfgBuilder.h"
+#include "cfgBuilder.h"
 
 
 namespace p4mlir::tests {

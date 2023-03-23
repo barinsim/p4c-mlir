@@ -4,8 +4,8 @@
 #include "test/gtest/helpers.h"
 #include "frontends/common/parseInput.h"
 #include "common.h"
-#include "../cfgBuilder.h"
-#include "../domTree.h"
+#include "cfgBuilder.h"
+#include "domTree.h"
 
 
 namespace p4mlir::tests {

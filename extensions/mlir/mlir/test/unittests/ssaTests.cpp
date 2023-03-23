@@ -6,9 +6,9 @@
 #include "frontends/common/resolveReferences/resolveReferences.h"
 #include "frontends/p4/toP4/toP4.h"
 #include "common.h"
-#include "../cfgBuilder.h"
-#include "../domTree.h"
-#include "../ssa.h"
+#include "cfgBuilder.h"
+#include "domTree.h"
+#include "ssa.h"
 
 
 namespace p4mlir::tests {

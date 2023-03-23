@@ -3,7 +3,7 @@
 
 
 #include <string>
-#include "../cfgBuilder.h"
+#include "cfgBuilder.h"
 
 
 namespace p4mlir::tests {

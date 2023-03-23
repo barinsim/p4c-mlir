@@ -1,0 +1,1 @@
+RUN: p4c-mlir-gtest
