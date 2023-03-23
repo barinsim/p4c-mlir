@@ -7,7 +7,7 @@ configure_lit_site_cfg(
 
 add_lit_testsuite(check-p4c-mlir "Running the p4c-mlir tests"
         ${CMAKE_CURRENT_BINARY_DIR}
-        DEPENDS p4c-mlir-gtest
+        DEPENDS p4c-mlir-gtest p4c-mlir-translate
         ARGS --show-all
         )
 set_target_properties(check-p4c-mlir PROPERTIES FOLDER "Tests")
