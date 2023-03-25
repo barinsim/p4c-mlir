@@ -11,11 +11,11 @@ action foo() {
     if (x1 == 2) {
         // CHECK: = p4.constant 3 : si16
         int<16> x2 = 3;
-        // CHECK-NEXT: p4.uncond
+        // CHECK-NEXT: cf.br
     } else {
         // CHECK: = p4.constant 4 : si16
         int<16> x3 = 4;
-        // CHECK-NEXT: p4.uncond
+        // CHECK-NEXT: cf.br
     }
     // CHECK-NEXT: = p4.constant 5 : si16
     int<16> x4 = 5;

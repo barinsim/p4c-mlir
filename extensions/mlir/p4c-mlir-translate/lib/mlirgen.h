@@ -134,10 +134,9 @@ class MLIRGenImplCFG : public Inspector
         // mlir::cf::CondBranchOp can handle that
         // TODO: it stems from the canonicalization of the CFG, remove it
         if (currBlock->succs.size() == 1) {
-            fBlock = getMLIRBlock(currBlock->succs.at(0));
-            int i = 0;
-        } else {
             fBlock = tBlock;
+        } else {
+            fBlock = getMLIRBlock(currBlock->succs.at(1));;
         }
 
         // TODO: make p4.cond?
@@ -202,6 +201,26 @@ class MLIRGenImpl : public Inspector
             std::for_each(comps.begin(), comps.end(), [&](auto* stmt) {
                 cfgGen.apply(stmt, bb);
             });
+        });
+
+        // Terminate blocks which had no terminator in CFG.
+        // If the block has 1 successor insert BranchOp.
+        // If the block has no successors insert ReturnOp.
+        CFGWalker::preorder(cfg.at(action), [&](BasicBlock* bb) {
+            BUG_CHECK(mapping.count(bb), "Could not retrive MLIR block");
+            auto* block = mapping.at(bb);
+            if (!block->empty() && block->back().hasTrait<mlir::OpTrait::IsTerminator>()) {
+                return;
+            }
+            BUG_CHECK(bb->succs.size() <= 1, "Non-terminated block can have at most 1 successor");
+            auto loc = builder.getUnknownLoc();
+            if (bb->succs.size() == 1) {
+                auto* succ = bb->succs.front();
+                BUG_CHECK(mapping.count(succ), "Could not retrive MLIR block");
+                builder.create<mlir::cf::BranchOp>(loc, mapping.at(succ), mlir::ValueRange());
+            } else {
+                builder.create<p4mlir::ReturnOp>(loc);
+            }
         });
 
         builder.setInsertionPointToEnd(parent);
