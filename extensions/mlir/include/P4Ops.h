@@ -9,6 +9,8 @@
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 
 #define GET_OP_CLASSES
+#include "P4OpsEnumAttr.h.inc"
+#include "P4OpsAttr.h.inc"
 #include "P4Ops.h.inc"
 
 #endif // STANDALONE_STANDALONEOPS_H
