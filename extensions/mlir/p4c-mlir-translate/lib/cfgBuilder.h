@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <map>
+#include <unordered_map>
 
 #include "ir/ir.h"
 #include "ir/visitor.h"
@@ -10,10 +11,38 @@
 namespace p4mlir {
 
 
-// TODO: fix const correctes of succs
-struct BasicBlock {
+// Represents a lexical scope in a P4 program.
+// The scope is represented using declarations created within the scope and its 'parent' scope.
+class Scope
+{
+ public:
+    Scope* parent = nullptr;
+    std::unordered_set<const IR::IDeclaration*> decls;
+
+ public:
+    static Scope* create(Scope* parent_) { CHECK_NULL(parent_); return new Scope(parent_); }
+    static Scope* create() { return new Scope(nullptr); }
+    void add(const IR::IDeclaration* decl);
+
+    // Checks if variable declared in 'decl' can be referred in this scope.
+    // Recursively searches through the 'parent'.
+    bool isVisible(const IR::IDeclaration* decl) const;
+
+ private:
+    Scope(Scope* parent_) : parent(parent_) {}
+};
+
+// TODO: fix const correctess of succs
+struct BasicBlock
+{
+    BasicBlock(Scope& scope_) : scope(scope_) {}
+
     std::vector<const IR::StatOrDecl*> components;
     std::vector<BasicBlock*> succs;
+
+    // Stores visible declarations within this block
+    Scope& scope;
+
     static int nextId;
     int id = nextId++;
 };
@@ -139,9 +168,10 @@ class CFGWalker
     }
 
     // TODO: This is not erase. More like follow-through
+    // TODO: remove this
     template <typename Func>
     static BasicBlock* erase(BasicBlock* entry, Func shouldErase) {
-        BasicBlock dummy;
+        BasicBlock dummy(*Scope::create());
         dummy.succs.push_back(entry);
         forEachBlock(&dummy, [&dummy, &shouldErase](BasicBlock* bb) {
             if (shouldErase(bb) && bb != &dummy) {

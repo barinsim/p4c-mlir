@@ -1,28 +1,39 @@
 // RUN: p4c-mlir-translate %s | FileCheck %s
 
-// CHECK-LABEL: module
 action foo() {
-    // CHECK-NEXT: [[reg1:%[0-9]+]] = p4.constant 1 : si16
     int<16> x1 = 1;
-    // CHECK-NEXT: p4.eq([[reg1]]) : (si16, si16) -> bool
-    // CHECK-NEXT: [[reg2:%[0-9]+]] = p4.constant 2 : si16
-    // CHECK-NEXT: [[reg3:%[0-9]+]] = p4.eq([[reg1]], [[reg2]]) : (si16, si16) -> bool
-    // CHECK-NEXT: p4.cond [[reg3]] [[bb1:bb[0-9]+]]^ [[bb2:bb[0-9]+]]^
     if (x1 == 2) {
-        // CHECK: = p4.constant 3 : si16
         int<16> x2 = 3;
-        // CHECK-NEXT: cf.br
     } else {
-        // CHECK: = p4.constant 4 : si16
         int<16> x3 = 4;
-        // CHECK-NEXT: cf.br
     }
-    // CHECK-NEXT: = p4.constant 5 : si16
     int<16> x4 = 5;
-    // CHECK-NEXT: = p4.return
     return;
 }
 
+// CHECK-LABEL: module
+// CHECK: %0 = p4.constant 1 : si16
+// CHECK: %1 = p4.cast(%0) : si16 -> si16
+// CHECK: %2 = p4.copy(%1) : si16 -> si16
+// CHECK: %3 = p4.constant 2 : si64
+// CHECK: %4 = p4.cast(%3) : si64 -> si16
+// CHECK: %5 = "p4.cmp"(%2, %4) {kind = 0 : i32} : (si16, si16) -> i1
+// CHECK: cf.cond_br %5, ^bb1, ^bb3
 
+    // CHECK-DAG: ^bb1:
+    // CHECK: %6 = p4.constant 3 : si16
+    // CHECK: %7 = p4.cast(%6) : si16 -> si16
+    // CHECK: %8 = p4.copy(%7) : si16 -> si16
+    // CHECK: cf.br ^bb2
 
+// CHECK-DAG: ^bb2:
+// CHECK: %9 = p4.constant 5 : si16
+// CHECK: %10 = p4.cast(%9) : si16 -> si16
+// CHECK: %11 = p4.copy(%10) : si16 -> si16
+// CHECK: p4.return
 
+    // CHECK-DAG: ^bb3:
+    // CHECK: %12 = p4.constant 4 : si16
+    // CHECK: %13 = p4.cast(%12) : si16 -> si16
+    // CHECK: %14 = p4.copy(%13) : si16 -> si16
+    // CHECK: cf.br ^bb2

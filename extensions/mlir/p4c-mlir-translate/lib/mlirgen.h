@@ -146,8 +146,11 @@ class MLIRGenImplCFG : public Inspector
     }
 
     void postorder(const IR::Cast* cast) override {
-        // TODO: handle casts that are not no-op
-        addValue(cast, toValue(cast->expr));
+        CHECK_NULL(cast->destType);
+        auto src = toValue(cast->expr);
+        auto targetType = toMLIRType(builder, cast->destType);
+        auto value = builder.create<p4mlir::CastOp>(loc(builder, cast), targetType, src);
+        addValue(cast, value);
     }
 
     bool preorder(const IR::IfStatement* ifStmt) override {
@@ -164,7 +167,7 @@ class MLIRGenImplCFG : public Inspector
         if (currBlock->succs.size() == 1) {
             fBlock = tBlock;
         } else {
-            fBlock = getMLIRBlock(currBlock->succs.at(1));;
+            fBlock = getMLIRBlock(currBlock->succs.at(1));
         }
 
         // TODO: make p4.cond?
@@ -280,6 +283,7 @@ class MLIRGenImpl : public Inspector
                 return;
             }
             BUG_CHECK(bb->succs.size() <= 1, "Non-terminated block can have at most 1 successor");
+            builder.setInsertionPointToEnd(block);
             auto loc = builder.getUnknownLoc();
             if (bb->succs.size() == 1) {
                 auto* succ = bb->succs.front();

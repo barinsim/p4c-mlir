@@ -64,7 +64,7 @@ bool GatherSSAReferences::preorder(const IR::PathExpression *pe) {
     if (forbidden.count(decl)) {
         return true;
     }
-    BUG_CHECK(!(isRead() && isWrite()), "ReadWrite context cannot be expressed as a SSA form");
+    BUG_CHECK(!(isRead() && isWrite()), "ReadWrite context cannot be expressed as an SSA form");
     if (isRead()) {
         b.addRead(pe, decl);
     }
@@ -169,7 +169,7 @@ SSAInfo::SSAInfo(std::pair<const IR::IDeclaration *, const BasicBlock *> cfg,
 
     DomTree* domTree = DomTree::fromEntryBlock(entry);
 
-    // Creats phi nodes for a variable 'var' which is written in 'writeBlocks'
+    // Creates phi nodes for a variable 'var' which is written in 'writeBlocks'
     auto createPhiNodes = [&](const IR::IDeclaration* var,
                                 const std::unordered_set<const BasicBlock* >& writeBlocks) {
         std::unordered_set<const BasicBlock*> visited;
@@ -184,6 +184,10 @@ SSAInfo::SSAInfo(std::pair<const IR::IDeclaration *, const BasicBlock *> cfg,
             auto domFrontier = domTree->domFrontier(curr);
             for (auto* bb : domFrontier) {
                 if (b.phiExists(bb, var)) {
+                    continue;
+                }
+                // If var is not in scope in the block, do not add the phi
+                if (!bb->scope.isVisible(var)) {
                     continue;
                 }
                 b.addPhi(bb, var);
@@ -219,7 +223,7 @@ void SSAInfo::rename(const BasicBlock *block, Builder &b,
                      const std::unordered_set<const IR::IDeclaration *> &forbidden) const {
     // This is used to pop the correct number of elements from 'stkIDs'
     // once we are getting out of the recursion
-    std::unordered_map<const IR::IDeclaration*, std::size_t> IDsAdded;
+    std::unordered_map<const IR::IDeclaration*, int> IDsAdded;
 
     auto vars = b.getPhiInfo(block);
     for (auto* var : vars) {

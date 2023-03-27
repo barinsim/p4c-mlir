@@ -19,8 +19,6 @@ BasicBlock* getByName(const std::map<const IR::IDeclaration*, BasicBlock*>& cfg,
     return it->second;
 }
 
-// This is a simple way how to get 'BasicBlock' that contains 'stmt' statement.
-// It relies on a unique string representation of the statement within the whole program.
 p4mlir::BasicBlock* getByStmtString(p4mlir::BasicBlock* entry, const std::string& stmt) {
     auto bbs = CFGWalker::collect(entry, [&](auto* bb) {
         return std::any_of(bb->components.begin(), bb->components.end(), [&](auto* c) {

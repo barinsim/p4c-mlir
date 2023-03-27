@@ -10,6 +10,23 @@ namespace p4mlir {
 
 int BasicBlock::nextId = 0;
 
+void Scope::add(const IR::IDeclaration* decl) {
+    CHECK_NULL(decl);
+    BUG_CHECK(!decls.count(decl), "Declaration is already present in this scope");
+    decls.insert(decl);
+}
+
+bool Scope::isVisible(const IR::IDeclaration* decl) const {
+    CHECK_NULL(decl);
+    if (decls.count(decl)) {
+        return true;
+    }
+    if (!parent) {
+        return false;
+    }
+    return parent->isVisible(decl);
+}
+
 void CFGBuilder::end_apply(const IR::Node*) {
     auto isFinal = [](const BasicBlock* bb) {
         return bb->succs.empty();
@@ -54,7 +71,7 @@ void CFGBuilder::end_apply(const IR::Node*) {
 
 bool CFGBuilder::preorder(const IR::P4Action* action) {
     BUG_CHECK(!b.callableToCFG.count(action), "Action already visited");
-    BasicBlock* entryBlock = new BasicBlock();
+    BasicBlock* entryBlock = new BasicBlock(*Scope::create());
     b.enterBasicBlock(entryBlock);
     b.callableToCFG.insert({action, entryBlock});
     return true;
@@ -63,7 +80,7 @@ bool CFGBuilder::preorder(const IR::P4Action* action) {
 bool CFGBuilder::preorder(const IR::P4Control* control) {
     BUG_CHECK(!b.callableToCFG.count(control), "");
     visit(control->controlLocals);
-    BasicBlock* entryBlock = new BasicBlock();
+    BasicBlock* entryBlock = new BasicBlock(*Scope::create());
     b.enterBasicBlock(entryBlock);
     b.callableToCFG.insert({control, entryBlock});
     visit(control->body);
@@ -72,9 +89,10 @@ bool CFGBuilder::preorder(const IR::P4Control* control) {
 
 bool CFGBuilder::preorder(const IR::IfStatement* ifStmt) {
     b.add(ifStmt);
-    BasicBlock* trueB = new BasicBlock();
-    BasicBlock* falseB = new BasicBlock();
-    BasicBlock* afterB = new BasicBlock();
+    Scope& scope = b.current()->scope;
+    BasicBlock* trueB = new BasicBlock(*Scope::create(&scope));
+    BasicBlock* falseB = new BasicBlock(*Scope::create(&scope));
+    BasicBlock* afterB = new BasicBlock(scope);
     b.addSuccessor(trueB);
     b.addSuccessor(falseB);
     b.enterBasicBlock(trueB);
@@ -92,11 +110,12 @@ bool CFGBuilder::preorder(const IR::IfStatement* ifStmt) {
 bool CFGBuilder::preorder(const IR::SwitchStatement* switchStmt) {
     b.add(switchStmt);
     BasicBlock* beforeB = b.current();
+    Scope& scope = beforeB->scope;
 
-    auto createBlockForEachCase = [](auto& cases) {
+    auto createBlockForEachCase = [&](auto& cases) {
         std::vector<BasicBlock*> res;
         std::for_each(cases.begin(), cases.end(), [&](auto*) {
-            res.push_back(new BasicBlock());
+            res.push_back(new BasicBlock(*Scope::create(&scope)));
         });
         return res;
     };
@@ -112,7 +131,7 @@ bool CFGBuilder::preorder(const IR::SwitchStatement* switchStmt) {
     auto& cases = switchStmt->cases;
     std::vector<BasicBlock*> blocks = createBlockForEachCase(cases);
     // Add the 'after' block
-    BasicBlock* afterB = new BasicBlock();
+    BasicBlock* afterB = new BasicBlock(scope);
     blocks.push_back(afterB);
     for (std::size_t i = 0; i < cases.size(); ++i) {
         b.enterBasicBlock(beforeB);
@@ -138,6 +157,7 @@ bool CFGBuilder::preorder(const IR::Declaration_Variable* decl) {
         return true;
     }
     b.add(decl);
+    b.current()->scope.add(decl);
     return true;
 }
 

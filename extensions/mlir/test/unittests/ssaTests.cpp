@@ -17,7 +17,7 @@ namespace p4mlir::tests {
 class SSAInfo : public Test::P4CTest { };
 
 
-TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action) {
+TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action_1) {
     std::string src = P4_SOURCE(R"(
         action foo() {
             int<16> x = 3;
@@ -153,6 +153,64 @@ TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action) {
     EXPECT_NE(x2Def, x3Def);
 }
 
+TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action_2) {
+    std::string src = P4_SOURCE(R"(
+        action foo() {
+            // bb1
+            int<16> x1 = 1;
+            if (x1 == 2) {
+                // bb2
+                int<16> x2 = 3;
+                x1 = 3;
+            } else {
+                // bb3
+                int<16> x3 = 4;
+                x1 = 4;
+            }
+            // bb4
+            int<16> x4 = 5;
+            return;
+        }
+    )");
+    auto* program = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
+    ASSERT_TRUE(program && ::errorCount() == 0);
+
+    auto* refMap = new P4::ReferenceMap();
+    auto* typeMap = new P4::TypeMap();
+    program = program->apply(P4::ResolveReferences(refMap));
+    program = program->apply(P4::TypeInference(refMap, typeMap, false, true));
+    program = program->apply(P4::TypeChecking(refMap, typeMap, true));
+    ASSERT_TRUE(program && ::errorCount() == 0);
+
+    auto* cfgBuilder = new p4mlir::CFGBuilder();
+    program->apply(*cfgBuilder);
+    auto cfg = cfgBuilder->getCFG();
+    ASSERT_EQ(cfg.size(), (std::size_t)1);
+    auto cfgFoo = getByName(cfg, "foo");
+    ASSERT_TRUE(::errorCount() == 0);
+
+    p4mlir::SSAInfo ssaInfo(*cfg.begin(), refMap, typeMap);
+    ASSERT_TRUE(::errorCount() == 0);
+
+    auto* bb1 = getByStmtString(cfgFoo, "int<16> x1 = (int<16>)16s1;");
+    auto* bb2 = getByStmtString(cfgFoo, "int<16> x2 = (int<16>)16s3;");
+    auto* bb3 = getByStmtString(cfgFoo, "int<16> x3 = (int<16>)16s4;");
+    auto* bb4 = getByStmtString(cfgFoo, "int<16> x4 = (int<16>)16s5;");
+
+    auto names = [](auto decls) {
+        std::unordered_set<cstring> res;
+        for (auto[d, p] : decls) {
+            res.insert(d->getName().name);
+        }
+        return res;
+    };
+
+    using unordered = std::unordered_set<cstring>;
+    EXPECT_EQ(names(ssaInfo.getPhiInfo(bb1)), unordered({}));
+    EXPECT_EQ(names(ssaInfo.getPhiInfo(bb2)), unordered({}));
+    EXPECT_EQ(names(ssaInfo.getPhiInfo(bb3)), unordered({}));
+    EXPECT_EQ(names(ssaInfo.getPhiInfo(bb4)), unordered({"x1"}));
+}
 
 TEST_F(SSAInfo, Correctly_detect_SSA_reads_and_writes_considering_out_args) {
     std::string src = P4_SOURCE(R"(
@@ -195,14 +253,6 @@ TEST_F(SSAInfo, Correctly_detect_SSA_reads_and_writes_considering_out_args) {
     auto* g = new p4mlir::GatherOutArgsScalars(refMap, typeMap);
     fooAST->apply(*g);
     ASSERT_TRUE(program && ::errorCount() == 0);
-
-    auto names = [](auto decls) {
-        std::unordered_set<cstring> res;
-        for (auto* d : decls) {
-            res.insert(d->getName().name);
-        }
-        return res;
-    };
 
     using unordered = std::unordered_set<cstring>;
     EXPECT_EQ(names(g->get()), unordered({"f1", "f2", "f4"}));

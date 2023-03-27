@@ -39,15 +39,23 @@ def CopyOp : P4Op<"copy", [SameOperandsAndResultType]> {
     let assemblyFormat = "attr-dict `(` $value `)` `:` type($value) `->` type($result)";
 }
 
+def CastOp : P4Op<"cast"> {
+    let arguments = (ins AnyType:$value);
+    let results = (outs AnyType:$result);
+    let assemblyFormat = "attr-dict `(` $value `)` `:` type($value) `->` type($result)";
+}
+
 def Equal: I32EnumAttrCase<"eq", 0>;
 
-def CompareOpKindAttr: I32EnumAttr<"CompareOpKind", "Determines the kind of comparison done by CompareOp", [Equal]> {
+def CompareOpKindAttr: I32EnumAttr<
+                        "CompareOpKind", "Determines the kind of comparison done by CompareOp",
+                        [Equal]> {
   let cppNamespace = "p4mlir";
   //let stringToSymbolFnName = "ConvertToEnum";
   //let symbolToStringFnName = "ConvertToString";
 }
 
-def CompareOp : P4Op<"cmp", [Pure]> {
+def CompareOp : P4Op<"cmp", [Pure, SameTypeOperands]> {
     let arguments = (ins CompareOpKindAttr:$kind, Builtin_Integer:$lhs, Builtin_Integer:$rhs);
     let results = (outs I1:$result);
 

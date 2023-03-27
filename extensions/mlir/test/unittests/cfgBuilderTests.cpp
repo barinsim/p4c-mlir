@@ -744,6 +744,78 @@ TEST_F(CFGBuilder, Test_empty_if_statement) {
 }
 
 
+TEST_F(CFGBuilder, Test_visibility_of_variables_within_a_scope) {
+    std::string src = P4_SOURCE(R"(
+        action foo() {
+            // bb1
+            int<16> f1;
+            int<16> f2;
+            if (f2 > 2) {
+                // bb2
+                int<16> f3;
+                int<16> f4 = 1;
+            } else {
+                // bb3
+                f2 = 3;
+            }
+            // bb4
+            int<16> f5;
+            if (f3 > 4) {
+                // bb5
+                f1 = 2;
+            } else {
+                // bb6
+                int<16> f1 = 1;
+                int<16> f5 = 1;
+                if (f1 > 3) {
+                    // bb7
+                    int<16> f6 = 2;
+                }
+                else {
+                    // bb8
+                    int<16> f7 = 2;
+                }
+            }
+            // bb9
+            return;
+        }
+    )");
+    auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
+    ASSERT_TRUE(pgm && ::errorCount() == 0);
+
+    auto b = new p4mlir::CFGBuilder;
+    pgm->apply(*b);
+    auto all = b->getCFG();
+
+    ASSERT_EQ(all.size(), (std::size_t)1);
+    auto* cfgFoo = getByName(all, "foo");
+    auto* bb1 = getByStmtString(cfgFoo, "int<16> f1;");
+    auto* bb2 = getByStmtString(cfgFoo, "int<16> f3;");
+    auto* bb3 = getByStmtString(cfgFoo, "f2 = 3;");
+    auto* bb4 = getByStmtString(cfgFoo, "int<16> f5;");
+    auto* bb5 = getByStmtString(cfgFoo, "f1 = 2;");
+    auto* bb6 = getByStmtString(cfgFoo, "int<16> f1 = 1;");
+    auto* bb7 = getByStmtString(cfgFoo, "int<16> f6 = 2;");
+    auto* bb8 = getByStmtString(cfgFoo, "int<16> f7 = 2;");
+    auto* bb9 = getByStmtString(cfgFoo, "return;");
+
+    // These asserts check only current scope, they do not search parent
+    using unordered = std::unordered_set<cstring>;
+    EXPECT_EQ(names(bb1->scope.decls), unordered({"f1", "f2", "f5"}));
+    EXPECT_EQ(names(bb2->scope.decls), unordered({"f3", "f4"}));
+    EXPECT_EQ(names(bb3->scope.decls), unordered({}));
+    EXPECT_EQ(names(bb4->scope.decls), unordered({"f1", "f2", "f5"}));
+    EXPECT_EQ(names(bb5->scope.decls), unordered({}));
+    EXPECT_EQ(names(bb6->scope.decls), unordered({"f1", "f5"}));
+    EXPECT_EQ(names(bb7->scope.decls), unordered({"f6"}));
+    EXPECT_EQ(names(bb8->scope.decls), unordered({"f7"}));
+    EXPECT_EQ(names(bb9->scope.decls), unordered({"f1", "f2", "f5"}));
+
+    EXPECT_EQ(&bb1->scope, &bb4->scope);
+    EXPECT_EQ(&bb4->scope, &bb9->scope);
+}
+
+
 // TEST_F(CFGBuilder, Test_switch_statement_with_empty_cases) {
 //     std::string src = P4_SOURCE(R"(
 //         struct Parsed_packet {}
