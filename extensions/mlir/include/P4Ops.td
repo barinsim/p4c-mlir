@@ -36,7 +36,7 @@ def ReturnOp : P4Op<"return", [Pure, HasParent<"ActionOp">, Terminator]> {
 def CopyOp : P4Op<"copy", [SameOperandsAndResultType]> {
     let arguments = (ins AnyType:$value);
     let results = (outs AnyType:$result);
-    //let assemblyFormat = "attr-dict";
+    let assemblyFormat = "attr-dict `(` $value `)` `:` type($value) `->` type($result)";
 }
 
 def Equal: I32EnumAttrCase<"eq", 0>;
