@@ -1,17 +1,19 @@
 #include "ssa.h"
 #include <variant>
-#include <unordered_set>
-#include <unordered_map>
 #include <stack>
 #include <exception>
 #include <optional>
 #include <iterator>
+
 #include "ir/ir.h"
 #include "ir/visitor.h"
 #include "ir/dump.h"
+
 #include "frontends/common/resolveReferences/referenceMap.h"
 #include "frontends/p4/typeMap.h"
+
 #include "lib/log.h"
+
 #include "cfgBuilder.h"
 #include "domTree.h"
 
@@ -125,12 +127,12 @@ bool SSAInfo::Builder::phiExists(const BasicBlock* bb, const IR::IDeclaration* v
     return phiInfo.count(bb) && phiInfo.at(bb).count(var);
 }
 
-std::unordered_set<const IR::IDeclaration *> SSAInfo::Builder::getPhiInfo(
+ordered_set<const IR::IDeclaration *> SSAInfo::Builder::getPhiInfo(
     const BasicBlock *bb) const {
     if (!phiInfo.count(bb)) {
         return {};
     }
-    std::unordered_set<const IR::IDeclaration*> decls;
+    ordered_set<const IR::IDeclaration*> decls;
     std::transform(phiInfo.at(bb).begin(), phiInfo.at(bb).end(),
                     std::inserter(decls, decls.end()), [](auto &p) { return p.first; });
     return decls;
@@ -153,7 +155,7 @@ SSAInfo::SSAInfo(std::pair<const IR::IDeclaration *, const BasicBlock *> cfg,
 
     // For each variable collect blocks where it is written
     auto collectWrites = [&]() {
-        std::unordered_map<const IR::IDeclaration*, std::unordered_set<const BasicBlock*>> rv;
+        ordered_map<const IR::IDeclaration*, ordered_set<const BasicBlock*>> rv;
         CFGWalker::forEachBlock(entry, [&](auto* bb) {
             for (auto* stmt : bb->components) {
                 GatherSSAReferences refs(typeMap, refMap, forbidden);
@@ -171,8 +173,8 @@ SSAInfo::SSAInfo(std::pair<const IR::IDeclaration *, const BasicBlock *> cfg,
 
     // Creates phi nodes for a variable 'var' which is written in 'writeBlocks'
     auto createPhiNodes = [&](const IR::IDeclaration* var,
-                                const std::unordered_set<const BasicBlock* >& writeBlocks) {
-        std::unordered_set<const BasicBlock*> visited;
+                                const ordered_set<const BasicBlock* >& writeBlocks) {
+        ordered_set<const BasicBlock*> visited;
         std::stack<const BasicBlock*> worklist;
         std::for_each(writeBlocks.begin(), writeBlocks.end(), [&](auto *bb) {
             worklist.push(bb);
@@ -200,8 +202,8 @@ SSAInfo::SSAInfo(std::pair<const IR::IDeclaration *, const BasicBlock *> cfg,
     };
 
     auto numberSSAValues = [&]() {
-        std::unordered_map<const IR::IDeclaration*, ID> nextIDs;
-        std::unordered_map<const IR::IDeclaration*, std::stack<ID>> stkIDs;
+        ordered_map<const IR::IDeclaration*, ID> nextIDs;
+        ordered_map<const IR::IDeclaration*, std::stack<ID>> stkIDs;
         rename(entry, b, nextIDs, stkIDs, domTree, typeMap, refMap, forbidden);
     };
 
@@ -216,14 +218,14 @@ SSAInfo::SSAInfo(std::pair<const IR::IDeclaration *, const BasicBlock *> cfg,
 }
 
 void SSAInfo::rename(const BasicBlock *block, Builder &b,
-                     std::unordered_map<const IR::IDeclaration *, ID> &nextIDs,
-                     std::unordered_map<const IR::IDeclaration *, std::stack<ID>> &stkIDs,
+                     ordered_map<const IR::IDeclaration *, ID> &nextIDs,
+                     ordered_map<const IR::IDeclaration *, std::stack<ID>> &stkIDs,
                      const DomTree *domTree, const P4::TypeMap *typeMap,
                      const P4::ReferenceMap *refMap,
-                     const std::unordered_set<const IR::IDeclaration *> &forbidden) const {
+                     const ordered_set<const IR::IDeclaration *> &forbidden) const {
     // This is used to pop the correct number of elements from 'stkIDs'
     // once we are getting out of the recursion
-    std::unordered_map<const IR::IDeclaration*, int> IDsAdded;
+    ordered_map<const IR::IDeclaration*, int> IDsAdded;
 
     auto vars = b.getPhiInfo(block);
     for (auto* var : vars) {

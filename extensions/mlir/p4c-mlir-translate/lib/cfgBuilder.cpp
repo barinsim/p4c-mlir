@@ -1,7 +1,9 @@
 #include "cfgBuilder.h"
 
 #include <boost/algorithm/string.hpp>
+
 #include "lib/indent.h"
+
 #include "frontends/p4/toP4/toP4.h"
 
 
@@ -25,6 +27,27 @@ bool Scope::isVisible(const IR::IDeclaration* decl) const {
         return false;
     }
     return parent->isVisible(decl);
+}
+
+const BasicBlock* BasicBlock::getTrueSuccessor() const {
+    BUG_CHECK(!components.empty(), "BasicBlock is empty");
+    BUG_CHECK(components.back()->is<IR::IfStatement>(),
+              "BasicBlock is not terminated by IR::IfStatement");
+    return succs.at(0);
+}
+
+const BasicBlock* BasicBlock::getFalseSuccessor() const {
+    BUG_CHECK(!components.empty(), "BasicBlock is empty");
+    BUG_CHECK(components.back()->is<IR::IfStatement>(),
+              "BasicBlock is not terminated by IR::IfStatement");
+
+    // There are some wierd cases where if stmt can have 1 successor,
+    // in that case False target is a True target.
+    // TODO: it stems from the canonicalization of the CFG, remove it
+    if (succs.size() == 1) {
+        return succs.at(0);
+    }
+    return succs.at(1);
 }
 
 void CFGBuilder::end_apply(const IR::Node*) {
@@ -183,7 +206,7 @@ std::string toString(const BasicBlock* bb, int indent) {
 
 std::string CFGPrinter::toString(const BasicBlock* entry, int indent) {
     CHECK_NULL(entry);
-    std::unordered_set<const BasicBlock*> visited;
+    ordered_set<const BasicBlock*> visited;
     std::stringstream ss;
     toStringImpl(entry, indent, visited, ss);
     std::string str = ss.str();
@@ -193,7 +216,7 @@ std::string CFGPrinter::toString(const BasicBlock* entry, int indent) {
 }
 
 void CFGPrinter::toStringImpl(const BasicBlock* bb, int indent,
-                              std::unordered_set<const BasicBlock*>& visited,
+                              ordered_set<const BasicBlock*>& visited,
                               std::ostream& os) {
     visited.insert(bb);
     os << indent_t(indent) << makeBlockIdentifier(bb) << '\n';

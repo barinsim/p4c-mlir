@@ -3,6 +3,10 @@
 
 
 #include <string>
+
+#include "lib/ordered_set.h"
+#include "lib/ordered_map.h"
+
 #include "cfgBuilder.h"
 
 
@@ -32,5 +36,16 @@ std::unordered_set<cstring> names(T decls) {
 
 
 } // p4mlir::tests
+
+template <typename T>
+bool operator == (const std::unordered_set<T>& lhs, const ordered_set<T>& rhs) {
+    const std::unordered_set<T> tmp(rhs.begin(), rhs.end());
+    return lhs == tmp;
+}
+
+template <typename T>
+bool operator == (const ordered_set<T>& lhs,const std::unordered_set<T>& rhs) {
+    return rhs == lhs;
+}
 
 #endif /* BACKENDS_MLIR_TESTS_COMMON_H_ */

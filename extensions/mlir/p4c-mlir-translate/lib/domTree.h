@@ -3,8 +3,9 @@
 
 
 #include <vector>
-#include <unordered_map>
 
+#include "lib/ordered_map.h"
+#include "lib/ordered_set.h"
 #include "cfgBuilder.h"
 
 
@@ -15,16 +16,16 @@ class DomTree
 {
  // Maps block to the index into 'data'.
  // Also corresponds to the postorder traversal of cfg.
- std::unordered_map<const BasicBlock*, int> mapping;
- std::unordered_map<int, const BasicBlock*> revMapping;
+ ordered_map<const BasicBlock*, int> mapping;
+ ordered_map<int, const BasicBlock*> revMapping;
 
  // Tree data data[b] = 'parent of b'
  std::vector<int> data;
 
  // Tree data data[b] = 'children of b'
- std::vector<std::unordered_set<int>> revData;
+ std::vector<ordered_set<int>> revData;
 
- std::unordered_map<int, std::unordered_set<int>> domFrontiers;
+ ordered_map<int, ordered_set<int>> domFrontiers;
 
  public:
     static DomTree* fromEntryBlock(const BasicBlock* entry) {
@@ -53,22 +54,22 @@ class DomTree
         return res;
     }
 
-    std::unordered_set<const BasicBlock*> domFrontier(const BasicBlock* bb) const {
+    ordered_set<const BasicBlock*> domFrontier(const BasicBlock* bb) const {
         CHECK_NULL(bb);
         int node = idx(bb);
         BUG_CHECK(domFrontiers.count(node), "Dominance frontier info not found");
-        std::unordered_set<const BasicBlock*> res;
+        ordered_set<const BasicBlock*> res;
         std::for_each(domFrontiers.at(node).begin(), domFrontiers.at(node).end(), [&](int n) {
             res.insert(block(n));
         });
         return res;
     }
 
-    std::unordered_set<const BasicBlock*> children(const BasicBlock* bb) const {
+    ordered_set<const BasicBlock*> children(const BasicBlock* bb) const {
         CHECK_NULL(bb);
         int node = idx(bb);
         BUG_CHECK(node >= 0 && node < (int)revData.size(), "Children info not found");
-        std::unordered_set<const BasicBlock*> res;
+        ordered_set<const BasicBlock*> res;
         std::for_each(revData.at(node).begin(), revData.at(node).end(), [&](int n) {
             res.insert(block(n));
         });

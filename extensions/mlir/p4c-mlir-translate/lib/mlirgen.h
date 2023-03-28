@@ -32,6 +32,9 @@
 
 namespace p4mlir {
 
+using SSARefType = std::pair<std::variant<const IR::PathExpression *, const IR::IDeclaration *>,
+                             p4mlir::SSAInfo::ID>;
+
 namespace {
 
 
@@ -41,6 +44,7 @@ mlir::Location loc(mlir::OpBuilder& builder, const IR::Node* node) {
 }
 
 mlir::Type toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) {
+    CHECK_NULL(p4type);
     if (p4type->is<IR::Type_InfInt>()) {
         // TODO: create special type
         return mlir::IntegerType::get(builder.getContext(), 64, mlir::IntegerType::Signed);
@@ -56,24 +60,40 @@ mlir::Type toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) {
     return nullptr;
 }
 
+// Creates block arguments for jump from 'bb' to 'succ'.
+// The order of arguments corresponds to phi arguments stored within 'ssaInfo'.
+// 'ssaInfo' should be also used to create block parameters to match the order.
+std::vector<mlir::Value> createBlockArgs(const SSAInfo &ssaInfo, const BasicBlock *bb,
+                                         const BasicBlock *succ,
+                                         const std::map<SSARefType, mlir::Value> &refMap) {
+    std::vector<mlir::Value> rv;
+    auto phiInfo = ssaInfo.getPhiInfo(succ);
+    for (auto &[decl, phi] : phiInfo) {
+        BUG_CHECK(phi.sources.count(bb), "Phi node does not contain argument for the block");
+        auto id = phi.sources.at(bb).value();
+        SSARefType ref{decl, id};
+        BUG_CHECK(refMap.count(ref), "Could not resolve phi argument into value");
+        auto argVal = refMap.at(ref);
+        rv.push_back(argVal);
+    }
+    return rv;
+}
+
 
 } // namespace
 
 
 class MLIRGenImplCFG : public Inspector
 {
-    using SSARefType = std::pair<std::variant<const IR::PathExpression *, const IR::IDeclaration *>,
-                                 p4mlir::SSAInfo::ID>;
-
     mlir::OpBuilder& builder;
 
     BasicBlock* currBlock = nullptr;
 
-    std::unordered_map<const IR::Expression*, mlir::Value> exprToValue;
+    ordered_map<const IR::Expression*, mlir::Value> exprToValue;
 
-    std::map<SSARefType, mlir::Value> ssaRefToValue;
+    std::map<SSARefType, mlir::Value>& ssaRefToValue;
 
-    const std::unordered_map<const BasicBlock*, mlir::Block*>& blocksMapping;
+    const ordered_map<const BasicBlock*, mlir::Block*>& blocksMapping;
 
     const P4::TypeMap* typeMap = nullptr;
     const P4::ReferenceMap* refMap = nullptr;
@@ -86,14 +106,16 @@ class MLIRGenImplCFG : public Inspector
 
  public:
     MLIRGenImplCFG(mlir::OpBuilder &builder_,
-                   const std::unordered_map<const BasicBlock *, mlir::Block *> &blocksMapping_,
+                   const ordered_map<const BasicBlock *, mlir::Block *> &blocksMapping_,
                    const P4::TypeMap *typeMap_, const P4::ReferenceMap *refMap_,
-                   const SSAInfo& ssaInfo_)
+                   const SSAInfo& ssaInfo_,
+                   std::map<SSARefType, mlir::Value>& ssaRefToValue_)
         : builder(builder_),
           blocksMapping(blocksMapping_),
           typeMap(typeMap_),
           refMap(refMap_),
-          ssaInfo(ssaInfo_) {
+          ssaInfo(ssaInfo_),
+          ssaRefToValue(ssaRefToValue_) {
         CHECK_NULL(typeMap, refMap);
     }
 
@@ -135,6 +157,15 @@ class MLIRGenImplCFG : public Inspector
         builder.create<p4mlir::ReturnOp>(loc(builder, ret));
     }
 
+    void postorder(const IR::AssignmentStatement* assign) override {
+        // TODO: writes through pointer
+        BUG_CHECK(assign->left->is<IR::PathExpression>(), "Not implemented");
+
+        auto rValue = toValue(assign->right);
+        mlir::Value value = builder.create<p4mlir::CopyOp>(loc(builder, assign), rValue);
+        addValue(assign->left, value);
+    }
+
     void postorder(const IR::Declaration_Variable* decl) override {
         if (!decl->initializer) {
             // TODO: undefined variable
@@ -156,23 +187,14 @@ class MLIRGenImplCFG : public Inspector
     bool preorder(const IR::IfStatement* ifStmt) override {
         visit(ifStmt->condition);
         mlir::Value cond = toValue(ifStmt->condition);
-        // TODO: remove the magic constants
-        mlir::Block* tBlock = getMLIRBlock(currBlock->succs.at(0));
-        mlir::Block* fBlock;
-
-        // There are some wierd cases where if stmt can have 1 successor,
-        // in that case set both targets to the same block,
-        // mlir::cf::CondBranchOp can handle that
-        // TODO: it stems from the canonicalization of the CFG, remove it
-        if (currBlock->succs.size() == 1) {
-            fBlock = tBlock;
-        } else {
-            fBlock = getMLIRBlock(currBlock->succs.at(1));
-        }
-
-        // TODO: make p4.cond?
-        builder.create<mlir::cf::CondBranchOp>(loc(builder, ifStmt), cond, tBlock,
-                                               mlir::ValueRange(), fBlock, mlir::ValueRange());
+        mlir::Block* tBlock = getMLIRBlock(currBlock->getTrueSuccessor());
+        mlir::Block* fBlock = getMLIRBlock(currBlock->getFalseSuccessor());
+        auto tArgs =
+            createBlockArgs(ssaInfo, currBlock, currBlock->getTrueSuccessor(), ssaRefToValue);
+        auto fArgs =
+            createBlockArgs(ssaInfo, currBlock, currBlock->getFalseSuccessor(), ssaRefToValue);
+        auto l = loc(builder, ifStmt);
+        builder.create<mlir::cf::CondBranchOp>(l, cond, tBlock, tArgs, fBlock, fArgs);
         return false;
     }
 
@@ -191,29 +213,47 @@ class MLIRGenImplCFG : public Inspector
     }
 
     void addValue(const IR::Node* node, mlir::Value value) {
-        // Check if 'node' represents SSA value write
+        // Check if 'node' represents SSA value write,
+        // through IR::PathExpression or IR::IDeclaration.
+        // These must be stored separately to be able to resolve
+        // references of these values
         auto* decl = node->to<IR::IDeclaration>();
         if (decl && ssaInfo.isSSARef(decl)) {
             SSARefType ref{decl, ssaInfo.getID(decl)};
             ssaRefToValue.insert({ref, value});
             return;
         }
-
-        BUG_CHECK(node->is<IR::Expression>(),
-                  "Value can be associated only with an expression at this point");
-        exprToValue.insert({node->to<IR::Expression>(), value});
-    }
-
-    mlir::Value toValue(const IR::Node* node) const {
-        // SSA value reference is handled differently,
-        // it must be searched with {declaration, ssaNumber}
-        // as a key
         auto* pe = node->to<IR::PathExpression>();
         if (pe && ssaInfo.isSSARef(pe)) {
             CHECK_NULL(pe->path);
             auto* decl = refMap->getDeclaration(pe->path);
             SSARefType ref{decl, ssaInfo.getID(pe)};
-            return ssaRefToValue.at(ref);
+            ssaRefToValue.insert({ref, value});
+            return;
+        }
+        BUG_CHECK(node->is<IR::Expression>(),
+                  "Value can be associated only with an expression at this point");
+        exprToValue.insert({node->to<IR::Expression>(), value});
+    }
+
+    // Some SSA value references do not have corresponding AST node.
+    // For example references within phi nodes.
+    // These values can be retrived directly via 'decl' and its SSA 'id'
+    mlir::Value toValue(const IR::IDeclaration* decl, SSAInfo::ID id) const {
+        SSARefType ref{decl, id};
+        BUG_CHECK(ssaRefToValue.count(ref), "No matching value found");
+        return ssaRefToValue.at(ref);
+    }
+
+    mlir::Value toValue(const IR::Node* node) const {
+        // SSA value reference is handled differently.
+        // The mlir::Value is not connected directly to the
+        // AST node, rather to unique {decl, SSA id} pair
+        auto* pe = node->to<IR::PathExpression>();
+        if (pe && ssaInfo.isSSARef(pe)) {
+            CHECK_NULL(pe->path);
+            auto* decl = refMap->getDeclaration(pe->path);
+            return toValue(decl, ssaInfo.getID(pe));
         }
         BUG_CHECK(node->is<IR::Expression>(), "At this point node must be an expression");
         return exprToValue.at(node->to<IR::Expression>());
@@ -251,7 +291,7 @@ class MLIRGenImpl : public Inspector
 
         // For each BasicBlock create MLIR Block and insert it into the ActionOp region
         BUG_CHECK(cfg.count(action), "Could not retrive cfg");
-        std::unordered_map<const BasicBlock*, mlir::Block*> mapping;
+        ordered_map<const BasicBlock*, mlir::Block*> mapping;
         CFGWalker::preorder(cfg.at(action), [&](BasicBlock* bb) {
             auto& block = actOp.getBody().emplaceBlock();
             mapping.insert({bb, &block});
@@ -261,8 +301,30 @@ class MLIRGenImpl : public Inspector
         auto cfgIt = cfg.find(action);
         SSAInfo ssaInfo(*cfgIt, refMap, typeMap);
 
+        // Stores mapping of P4 ssa values to its mlir counterparts.
+        // This mapping is used during MLIRgen to resolve references
+        std::map<SSARefType, mlir::Value> ssaRefMap;
+
+        // For each mlir::Block insert block arguments using phi nodes info.
+        // These block arguments must be bound to {decl, ssa id} pairs,
+        // so that references can be resolved during MLIRgen
+        CFGWalker::preorder(cfg.at(action), [&](BasicBlock* bb) {
+            mlir::Block* block = mapping.at(bb);
+            auto phiInfo = ssaInfo.getPhiInfo(bb);
+            for (auto& [decl, phi] : phiInfo) {
+                auto loc = builder.getUnknownLoc();
+                auto type = toMLIRType(builder, typeMap->getType(decl->to<IR::Declaration>()));
+                mlir::BlockArgument arg = block->addArgument(type, loc);
+                // Bind the arg
+                auto id = phi.destination.value();
+                SSARefType ref{decl, id};
+                BUG_CHECK(!ssaRefMap.count(ref), "Binding already exists");
+                ssaRefMap.insert({ref, arg});
+            }
+        });
+
         // Fill the MLIR Blocks with Ops
-        MLIRGenImplCFG cfgGen(builder, mapping, typeMap, refMap, ssaInfo);
+        MLIRGenImplCFG cfgGen(builder, mapping, typeMap, refMap, ssaInfo, ssaRefMap);
         CFGWalker::preorder(cfg.at(action), [&](BasicBlock* bb) {
             BUG_CHECK(mapping.count(bb), "Could not retrive MLIR block");
             auto* block = mapping.at(bb);
@@ -288,7 +350,8 @@ class MLIRGenImpl : public Inspector
             if (bb->succs.size() == 1) {
                 auto* succ = bb->succs.front();
                 BUG_CHECK(mapping.count(succ), "Could not retrive MLIR block");
-                builder.create<mlir::cf::BranchOp>(loc, mapping.at(succ), mlir::ValueRange());
+                auto args = createBlockArgs(ssaInfo, bb, succ, ssaRefMap);
+                builder.create<mlir::cf::BranchOp>(loc, mapping.at(succ), args);
             } else {
                 builder.create<p4mlir::ReturnOp>(loc);
             }

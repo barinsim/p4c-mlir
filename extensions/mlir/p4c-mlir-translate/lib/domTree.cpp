@@ -1,3 +1,5 @@
+#include "lib/ordered_map.h"
+
 #include "domTree.h"
 
 
@@ -12,7 +14,7 @@ DomTree::DomTree(const BasicBlock* entry) {
     // Methods 'block()' and 'idx()' can be used to convert index back to block and vice versa.
     auto createMapping = [](const BasicBlock* e) {
         int num = 0;
-        std::unordered_map<const BasicBlock*, int> mp;
+        ordered_map<const BasicBlock*, int> mp;
         CFGWalker::postorder(e, [&num, &mp](const BasicBlock* bb) {
             BUG_CHECK(!mp.count(bb), "Each block must be visited once");
             mp[bb] = num;
@@ -23,7 +25,7 @@ DomTree::DomTree(const BasicBlock* entry) {
 
     auto collectPredecessors = [&](const BasicBlock* e) {
         BUG_CHECK(!mapping.empty(), "Mapping must be already established at this point");
-        std::unordered_map<int, std::vector<int>> preds;
+        ordered_map<int, std::vector<int>> preds;
         CFGWalker::forEachBlock(e, [&](const BasicBlock* bb) {
             if (!preds.count(idx(bb))) {
                 preds.insert({idx(bb), {}});
@@ -87,7 +89,7 @@ DomTree::DomTree(const BasicBlock* entry) {
 
     // Creates 'node -> {children}' tree from 'node -> parent' tree
     auto createRevTree = [&](const std::vector<int>& par) {
-        std::vector<std::unordered_set<int>> res(par.size());
+        std::vector<ordered_set<int>> res(par.size());
         for (int node = 0; node < (int)par.size() - 1; ++node) {
             auto status = res[par[node]].insert(node);
             BUG_CHECK(status.second, "Node has multiple identical children");
@@ -100,7 +102,7 @@ DomTree::DomTree(const BasicBlock* entry) {
     auto createDominanceFrontierSets = [&](const std::vector<int>& par) {
         int nodes = mapping.size();
         int entry = nodes - 1;
-        std::unordered_map<int, std::unordered_set<int>> res;
+        ordered_map<int, ordered_set<int>> res;
         const auto preds = collectPredecessors(block(entry));
         for (int node = 0; node < nodes; ++node) {
             BUG_CHECK(preds.count(node), "Predecessors info not found");

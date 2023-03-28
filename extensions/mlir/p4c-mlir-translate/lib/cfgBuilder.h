@@ -3,10 +3,13 @@
 
 #include <vector>
 #include <map>
-#include <unordered_map>
 
 #include "ir/ir.h"
 #include "ir/visitor.h"
+
+#include "lib/ordered_map.h"
+#include "lib/ordered_set.h"
+
 
 namespace p4mlir {
 
@@ -17,7 +20,7 @@ class Scope
 {
  public:
     Scope* parent = nullptr;
-    std::unordered_set<const IR::IDeclaration*> decls;
+    ordered_set<const IR::IDeclaration*> decls;
 
  public:
     static Scope* create(Scope* parent_) { CHECK_NULL(parent_); return new Scope(parent_); }
@@ -42,6 +45,12 @@ struct BasicBlock
 
     // Stores visible declarations within this block
     Scope& scope;
+
+    // Returns True/False successor of a block
+    // terminated by IR::IfStatement.
+    // Asserts that the block is terminated by IR::IfStatement
+    const BasicBlock* getTrueSuccessor() const;
+    const BasicBlock* getFalseSuccessor() const;
 
     static int nextId;
     int id = nextId++;
@@ -128,7 +137,7 @@ public:
 
  private:
     static void toStringImpl(const BasicBlock *bb, int indent,
-                             std::unordered_set<const BasicBlock *> &visited,
+                             ordered_set<const BasicBlock *> &visited,
                              std::ostream &os);
 };
 
@@ -156,14 +165,14 @@ class CFGWalker
     template <typename BBType, typename Func>
     static void postorder(BBType* entry, Func func) {
         CHECK_NULL(entry);
-        std::unordered_set<BBType*> visited;
+        ordered_set<BBType*> visited;
         postorder(entry, visited, func);
     }
 
     template <typename BBType, typename Func>
     static void preorder(BBType* entry, Func func) {
         CHECK_NULL(entry);
-        std::unordered_set<BBType*> visited;
+        ordered_set<BBType*> visited;
         preorder(entry, visited, func);
     }
 
@@ -178,7 +187,7 @@ class CFGWalker
                 return;
             }
             std::vector<BasicBlock*> newSuccs;
-            std::unordered_set<BasicBlock*> lookup;
+            ordered_set<BasicBlock*> lookup;
             for (auto* succ : bb->succs) {
                 // We need to get over all of which should
                 // be erased to the first valid one
@@ -204,7 +213,7 @@ class CFGWalker
 
  private:
     template <typename BBType, typename Func>
-    static void preorder(BBType* bb, std::unordered_set<BBType*>& visited, Func func) {
+    static void preorder(BBType* bb, ordered_set<BBType*>& visited, Func func) {
         CHECK_NULL(bb);
         if (visited.count(bb)) {
             return;
@@ -217,7 +226,7 @@ class CFGWalker
     }
 
     template <typename BBType, typename Func>
-    static void postorder(BBType* bb, std::unordered_set<BBType*>& visited, Func func) {
+    static void postorder(BBType* bb, ordered_set<BBType*>& visited, Func func) {
         CHECK_NULL(bb);
         if (visited.count(bb)) {
             return;

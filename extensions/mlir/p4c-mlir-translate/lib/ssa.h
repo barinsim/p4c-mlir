@@ -3,18 +3,22 @@
 
 
 #include <variant>
-#include <unordered_set>
-#include <unordered_map>
 #include <stack>
 #include <exception>
 #include <optional>
 #include <iterator>
+
 #include "ir/ir.h"
 #include "ir/visitor.h"
 #include "ir/dump.h"
+
 #include "frontends/common/resolveReferences/referenceMap.h"
 #include "frontends/p4/typeMap.h"
+
 #include "lib/log.h"
+#include "lib/ordered_map.h"
+#include "lib/ordered_set.h"
+
 #include "cfgBuilder.h"
 #include "domTree.h"
 
@@ -28,10 +32,10 @@ bool isPrimitiveType(const IR::Type *type);
 class GatherOutArgsScalars : public Inspector, P4WriteContext
 {
     class Builder {
-        std::unordered_set<const IR::IDeclaration*> decls;
+        ordered_set<const IR::IDeclaration*> decls;
      public:
         void add(const IR::IDeclaration* decl) { decls.insert(decl); }
-        std::unordered_set<const IR::IDeclaration*> get() const { return decls; }
+        ordered_set<const IR::IDeclaration*> get() const { return decls; }
     };
 
     Builder b;
@@ -46,7 +50,7 @@ class GatherOutArgsScalars : public Inspector, P4WriteContext
         CHECK_NULL(typeMap_);
     }
 
-    std::unordered_set<const IR::IDeclaration*> get() const { return b.get(); }
+    ordered_set<const IR::IDeclaration*> get() const { return b.get(); }
 
  private:
     bool preorder(const IR::PathExpression* pe) override;
@@ -79,11 +83,11 @@ class GatherSSAReferences : public Inspector, P4WriteContext
     const P4::ReferenceMap* refMap;
 
     // Output of GatherOutArgsScalars
-    const std::unordered_set<const IR::IDeclaration*> forbidden;
+    const ordered_set<const IR::IDeclaration*> forbidden;
 
 public:
    GatherSSAReferences(const P4::TypeMap *typeMap_, const P4::ReferenceMap *refMap_,
-                       std::unordered_set<const IR::IDeclaration *> forbidden_)
+                       ordered_set<const IR::IDeclaration *> forbidden_)
        : typeMap(typeMap_), refMap(refMap_), forbidden(std::move(forbidden_)) {}
 
    std::vector<RefInfo> getReads() const { return b.getReads(); }
@@ -104,7 +108,7 @@ class SSAInfo
 
     struct Phi {
         std::optional<ID> destination;
-        std::unordered_map<const BasicBlock*, std::optional<ID>> sources;
+        ordered_map<const BasicBlock*, std::optional<ID>> sources;
     };
 
  private:
@@ -113,11 +117,11 @@ class SSAInfo
     // Phi node for var V looks like this:
     //      V = phi(V, ..., V)
     // 1 argument for each predecessor.
-    std::unordered_map<const BasicBlock*, std::unordered_map<const IR::IDeclaration*, Phi>>
+    ordered_map<const BasicBlock*, ordered_map<const IR::IDeclaration*, Phi>>
         phiInfo;
 
     // Stores ID for each use/def of an SSA value
-    std::unordered_map<std::variant<const IR::IDeclaration *, const IR::PathExpression *>, ID>
+    ordered_map<std::variant<const IR::IDeclaration *, const IR::PathExpression *>, ID>
         ssaRefIDs;
 
     class Builder {
@@ -131,7 +135,7 @@ class SSAInfo
         void numberPhiSource(ID id, const BasicBlock *block, const IR::IDeclaration *var,
                              const BasicBlock *source);
         bool phiExists(const BasicBlock* bb, const IR::IDeclaration* var) const;
-        std::unordered_set<const IR::IDeclaration*> getPhiInfo(const BasicBlock* bb) const;
+        ordered_set<const IR::IDeclaration*> getPhiInfo(const BasicBlock* bb) const;
 
         decltype(phiInfo) movePhiInfo() const { return std::move(phiInfo); }
         decltype(ssaRefIDs) moveRefsInfo() const { return std::move(ssaRefIDs); }
@@ -141,7 +145,7 @@ public:
     SSAInfo(std::pair<const IR::IDeclaration*, const BasicBlock*> cfg,
             const P4::ReferenceMap* refMap, const P4::TypeMap* typeMap);
 
-    std::unordered_map<const IR::IDeclaration*, Phi> getPhiInfo(const BasicBlock* bb) const {
+    ordered_map<const IR::IDeclaration*, Phi> getPhiInfo(const BasicBlock* bb) const {
         if (phiInfo.count(bb)) {
             return phiInfo.at(bb);
         }
@@ -159,12 +163,12 @@ public:
 
  private:
     void rename(const BasicBlock* block, Builder& b,
-                std::unordered_map<const IR::IDeclaration*, ID>& nextIDs,
-                std::unordered_map<const IR::IDeclaration*, std::stack<ID>>& stkIDs,
+                ordered_map<const IR::IDeclaration*, ID>& nextIDs,
+                ordered_map<const IR::IDeclaration*, std::stack<ID>>& stkIDs,
                 const DomTree* domTree,
                 const P4::TypeMap* typeMap,
                 const P4::ReferenceMap* refMap,
-                const std::unordered_set<const IR::IDeclaration*>& forbidden) const;
+                const ordered_set<const IR::IDeclaration*>& forbidden) const;
 };
 
 
