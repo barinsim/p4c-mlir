@@ -32,42 +32,63 @@
 
 namespace p4mlir {
 
+// Type representing P4 SSA value.
+// Consists of P4 AST declaration and id computed during SSA calculation
 using SSARefType = std::pair<const IR::IDeclaration *, p4mlir::SSAInfo::ID>;
 
 namespace {
 
+// Converts P4 location stored in 'loc' into its MLIR counterpart
 mlir::Location loc(mlir::OpBuilder& builder, const IR::Node* node);
 
+// Converts P4 type into corresponding MLIR type
 mlir::Type toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type);
 
 // Creates block arguments for jump from 'bb' to 'succ'.
 // The order of arguments corresponds to phi arguments stored within 'ssaInfo'.
-// 'ssaInfo' should be also used to create block parameters to match the order.
+// 'ssaInfo' should be also used to create block parameters to match the order
 std::vector<mlir::Value> createBlockArgs(const SSAInfo &ssaInfo, const BasicBlock *bb,
                                          const BasicBlock *succ,
                                          const std::map<SSARefType, mlir::Value> &refMap);
 
 } // namespace
 
-
+// Visitor used to convert P4 constructs representable via
+// Control Flow Graph (i.e. actions, apply methods, parser) into MLIR.
+// This class must be applied direclty on the components of CFGBuilder::CFGType.
+// Components are visited in the order of execution.
+// While visiting terminators (e.g. IR::IfStatement) it is made sure
+// that children blocks are not visited.
+// The object of this class is meant to be alive for the whole MLIRgen of the entire CFG
 class MLIRGenImplCFG : public Inspector
 {
     mlir::OpBuilder& builder;
 
+    // Block of the currently visited statement
     BasicBlock* currBlock = nullptr;
 
+    // Mapping of expressions to the MLIR values they produced
     ordered_map<const IR::Expression*, mlir::Value> exprToValue;
 
+    // Mapping of P4 SSA values to its MLIR counterparts.
+    // Stores both real P4 values and MLIR block parameters
     std::map<SSARefType, mlir::Value>& ssaRefToValue;
 
+    // Maps P4 AST block to its MLIR counterpart
     const ordered_map<const BasicBlock*, mlir::Block*>& blocksMapping;
 
+    // Stores types of expressions
     const P4::TypeMap* typeMap = nullptr;
+
+    // Stores mapping of P4 references to its P4 declarations.
+    // Does not take SSA into account
     const P4::ReferenceMap* refMap = nullptr;
 
+    // SSA mapping of the currently visited CFG.
+    // Stores phi functions and SSA value numbering
     const SSAInfo& ssaInfo;
 
-    // This is an internal flag that makes sure this visitor was started properly
+    // Internal flag that makes sure this visitor was started properly
     // using custom 'apply' method instead of the usual `node->apply(visitor)`
     bool customApplyCalled = false;
 
@@ -110,27 +131,37 @@ class MLIRGenImplCFG : public Inspector
     void postorder(const IR::Cast* cast) override;
     void postorder(const IR::Equ* eq) override;
 
+    // --- Terminators ---
     bool preorder(const IR::IfStatement* ifStmt) override;
 
  private:
+    // Creates binding between 'node' and 'value'.
+    // These bindings are later queried via 'toValue()' and
+    // used to resolve SSA value references and results of expressions
     void addValue(const IR::Node* node, mlir::Value value);
 
     // Some SSA value references do not have corresponding AST node.
     // For example references within phi nodes.
-    // These values can be retrived directly via 'decl' and its SSA 'id'
+    // These and other values can be retrieved directly via 'decl' and its SSA 'id'
     mlir::Value toValue(const IR::IDeclaration* decl, SSAInfo::ID id) const;
 
+    // Returns value that was previously bound with 'node' via 'addValue()'
     mlir::Value toValue(const IR::Node* node) const;
+
+    // Returns MLIR counterpart of the P4 BasicBlock
     mlir::Block* getMLIRBlock(const BasicBlock* p4block) const;
 
 };
 
+// Visitor converting valid P4 AST into P4 MLIR dialect
 class MLIRGenImpl : public Inspector
 {
     mlir::OpBuilder& builder;
 
     const P4::TypeMap* typeMap = nullptr;
     const P4::ReferenceMap* refMap = nullptr;
+
+    // Control Flow Graph for all of the P4 constructs representable by a CFG
     const CFGBuilder::CFGType& cfg;
 
  public:
@@ -160,7 +191,9 @@ class MLIRGen : public PassManager
     }
 };
 
-
+// Main API to convert P4 AST into P4 MLIR dialect.
+// P4 dialect must be already registered into 'context'.
+// 'program' must be an AST of a valid P4 program
 mlir::OwningOpRef<mlir::ModuleOp> mlirGen(mlir::MLIRContext &context, const IR::P4Program *program);
 
 
