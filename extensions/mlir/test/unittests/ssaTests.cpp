@@ -282,11 +282,11 @@ TEST_F(SSAInfo, Correctly_detect_SSA_reads_and_writes_considering_out_args) {
     auto stmtIt = foo->components.begin();
 
     // int<16> f1 = 3;
-    EXPECT_EQ(writes(*stmtIt), unordered({"f1"}));
+    EXPECT_EQ(writes(*stmtIt), unordered({}));
     EXPECT_EQ(reads(*stmtIt), unordered({}));
     stmtIt++;
     // int<16> f2 = 3;
-    EXPECT_EQ(writes(*stmtIt), unordered({"f2"}));
+    EXPECT_EQ(writes(*stmtIt), unordered({}));
     EXPECT_EQ(reads(*stmtIt), unordered({}));
     stmtIt++;
     // int<16> f3 = 3;
@@ -294,7 +294,7 @@ TEST_F(SSAInfo, Correctly_detect_SSA_reads_and_writes_considering_out_args) {
     EXPECT_EQ(reads(*stmtIt), unordered({}));
     stmtIt++;
     // int<16> f4 = 3;
-    EXPECT_EQ(writes(*stmtIt), unordered({"f4"}));
+    EXPECT_EQ(writes(*stmtIt), unordered({}));
     EXPECT_EQ(reads(*stmtIt), unordered({}));
     stmtIt++;
     // int<16> f5 = 3;

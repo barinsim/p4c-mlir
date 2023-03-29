@@ -77,7 +77,9 @@ bool GatherSSAReferences::preorder(const IR::PathExpression *pe) {
 }
 
 bool GatherSSAReferences::preorder(const IR::Declaration* decl) {
-    b.addWrite(decl);
+    if (!forbidden.count(decl)) {
+        b.addWrite(decl);
+    }
     return true;
 }
 
@@ -143,14 +145,13 @@ SSAInfo::SSAInfo(std::pair<const IR::IDeclaration *, const BasicBlock *> cfg,
     CHECK_NULL(cfg.first, cfg.second, refMap, typeMap);
     auto* entry = cfg.second;
     auto* func = cfg.first->to<IR::Declaration>();
-    // TODO: pass Declaration instead of the cast
-    BUG_CHECK(func, "");
+    CHECK_NULL(func);
 
     Builder b;
 
     // Collect variables that cannot be stored into SSA values
     GatherOutArgsScalars g(refMap, typeMap);
-    func->to<IR::Declaration>()->apply(g);
+    func->apply(g);
     auto forbidden = g.get();
 
     // For each variable collect blocks where it is written
@@ -201,6 +202,19 @@ SSAInfo::SSAInfo(std::pair<const IR::IDeclaration *, const BasicBlock *> cfg,
         }
     };
 
+    // In P4 dialect, action parameters are represented as block parameters of the entry block.
+    // MLIR block parameters are equal to phi nodes which is how we represent action parameters here
+    auto createParameters = [&]() {
+        auto* action = func->to<IR::P4Action>();
+        BUG_CHECK(action, "Not implemented");
+        GatherSSAReferences refs(typeMap, refMap, forbidden);
+        action->parameters->apply(refs);
+        auto writes = refs.getWrites();
+        std::for_each(writes.begin(), writes.end(), [&](auto& w) {
+            b.addPhi(entry, w.decl);
+        });
+    };
+
     auto numberSSAValues = [&]() {
         ordered_map<const IR::IDeclaration*, ID> nextIDs;
         ordered_map<const IR::IDeclaration*, std::stack<ID>> stkIDs;
@@ -211,6 +225,7 @@ SSAInfo::SSAInfo(std::pair<const IR::IDeclaration *, const BasicBlock *> cfg,
     for (auto& [decl, blocks] : declToBlocks) {
         createPhiNodes(decl, blocks);
     }
+    createParameters();
     numberSSAValues();
 
     phiInfo = b.movePhiInfo();
