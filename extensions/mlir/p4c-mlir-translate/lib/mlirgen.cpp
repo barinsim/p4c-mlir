@@ -167,32 +167,64 @@ mlir::Block* MLIRGenImplCFG::getMLIRBlock(const BasicBlock* p4block) const {
     return blocksMapping.at(p4block);
 }
 
+bool MLIRGenImpl::preorder(const IR::P4Control* control) {
+    // Create ControlOp with 1 block
+    llvm::StringRef name(control->getName().toString());
+    auto controlOp = builder.create<p4mlir::ControlOp>(loc(builder, control), name);
+    auto saved = builder.saveInsertionPoint();
+    auto& block = controlOp.getBody().emplaceBlock();
+    builder.setInsertionPointToStart(&block);
+
+    // Generate everything within control block apart from the apply method
+    visit(control->controlLocals);
+
+    // Generate the apply method
+    auto applyOp = builder.create<p4mlir::ApplyOp>(loc(builder, control));
+    genMLIRFromCFG(control, applyOp.getBody());
+
+    builder.restoreInsertionPoint(saved);
+    return false;
+}
+
 bool MLIRGenImpl::preorder(const IR::P4Action* action) {
     // Create ActionOp
     llvm::StringRef name(action->getName().toString());
     auto actOp = builder.create<p4mlir::ActionOp>(loc(builder, action), name);
-    auto parent = builder.getBlock();
+    auto saved = builder.saveInsertionPoint();
 
-    // For each BasicBlock create MLIR Block and insert it into the ActionOp region
-    BUG_CHECK(cfg.count(action), "Could not retrive cfg");
+    // Generate action body
+    genMLIRFromCFG(action, actOp.getBody());
+
+    builder.restoreInsertionPoint(saved);
+    return false;
+}
+
+void MLIRGenImpl::genMLIRFromCFG(const IR::IDeclaration* decl, mlir::Region& targetRegion) {
+    CHECK_NULL(decl);
+    BUG_CHECK(cfg.count(decl), "Could retrieve CFG for the declaration");
+    auto saved = builder.saveInsertionPoint();
+
+    // Retrieve CFG for 'decl'
+    BasicBlock* entry = cfg.at(decl);
+
+    // For each BasicBlock create MLIR Block and insert it into the 'targetRegion'
     ordered_map<const BasicBlock*, mlir::Block*> mapping;
-    CFGWalker::controlFlowTraversal(cfg.at(action), [&](BasicBlock* bb) {
-        auto& block = actOp.getBody().emplaceBlock();
+    CFGWalker::controlFlowTraversal(entry, [&](BasicBlock* bb) {
+        auto& block = targetRegion.emplaceBlock();
         mapping.insert({bb, &block});
     });
 
-    // Create ssa mapping for this action
-    auto cfgIt = cfg.find(action);
-    SSAInfo ssaInfo(*cfgIt, refMap, typeMap);
+    // Create ssa mapping for this cfg
+    SSAInfo ssaInfo({decl, entry}, refMap, typeMap);
 
-    // Stores mapping of P4 ssa values to its mlir counterparts.
+    // Stores mapping of P4 ssa values to its MLIR counterparts.
     // This mapping is used during MLIRgen to resolve references
     std::map<SSARefType, mlir::Value> ssaRefMap;
 
     // For each mlir::Block insert block arguments using phi nodes info.
-    // These block arguments must be bound to {decl, ssa id} pairs,
+    // These block arguments must be then bound to {decl, ssa id} pairs,
     // so that references can be resolved during MLIRgen
-    CFGWalker::preorder(cfg.at(action), [&](BasicBlock* bb) {
+    CFGWalker::preorder(entry, [&](BasicBlock* bb) {
         mlir::Block* block = mapping.at(bb);
         auto phiInfo = ssaInfo.getPhiInfo(bb);
         for (auto& [decl, phi] : phiInfo) {
@@ -209,7 +241,7 @@ bool MLIRGenImpl::preorder(const IR::P4Action* action) {
 
     // Fill the MLIR Blocks with Ops
     MLIRGenImplCFG cfgGen(builder, mapping, typeMap, refMap, ssaInfo, ssaRefMap);
-    CFGWalker::preorder(cfg.at(action), [&](BasicBlock* bb) {
+    CFGWalker::preorder(entry, [&](BasicBlock* bb) {
         BUG_CHECK(mapping.count(bb), "Could not retrive MLIR block");
         auto* block = mapping.at(bb);
         builder.setInsertionPointToStart(block);
@@ -222,7 +254,7 @@ bool MLIRGenImpl::preorder(const IR::P4Action* action) {
     // Terminate blocks which had no terminator in CFG.
     // If the block has 1 successor insert BranchOp.
     // If the block has no successors insert ReturnOp.
-    CFGWalker::preorder(cfg.at(action), [&](BasicBlock* bb) {
+    CFGWalker::preorder(entry, [&](BasicBlock* bb) {
         BUG_CHECK(mapping.count(bb), "Could not retrive MLIR block");
         auto* block = mapping.at(bb);
         if (!block->empty() && block->back().hasTrait<mlir::OpTrait::IsTerminator>()) {
@@ -241,11 +273,8 @@ bool MLIRGenImpl::preorder(const IR::P4Action* action) {
         }
     });
 
-    builder.setInsertionPointToEnd(parent);
-    return false;
+    builder.restoreInsertionPoint(saved);
 }
-
-
 
 mlir::OwningOpRef<mlir::ModuleOp>
 mlirGen(mlir::MLIRContext& context, const IR::P4Program* program) {

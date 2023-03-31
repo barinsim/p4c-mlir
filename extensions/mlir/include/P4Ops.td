@@ -24,12 +24,21 @@ def ConstantOp : P4Op<"constant"> {
     ];
 }
 
-def ActionOp : P4Op<"action"> {
-  let arguments = (ins SymbolNameAttr:$sym_name);
-  let regions = (region MinSizedRegion<1>:$body);
+def ControlOp : P4Op<"control", [IsolatedFromAbove, NoTerminator]> {
+    let arguments = (ins SymbolNameAttr:$sym_name);
+    let regions = (region SizedRegion<1>:$body);
 }
 
-def ReturnOp : P4Op<"return", [Pure, HasParent<"ActionOp">, Terminator]> {
+def ActionOp : P4Op<"action"> {
+    let arguments = (ins SymbolNameAttr:$sym_name);
+    let regions = (region MinSizedRegion<1>:$body);
+}
+
+def ApplyOp : P4Op<"apply", [HasParent<"ControlOp">]> {
+    let regions = (region MinSizedRegion<1>:$body);
+}
+
+def ReturnOp : P4Op<"return", [Pure, ParentOneOf<["ActionOp", "ApplyOp"]>, Terminator]> {
     let assemblyFormat = "attr-dict";
 }
 
@@ -50,9 +59,9 @@ def Equal: I32EnumAttrCase<"eq", 0>;
 def CompareOpKindAttr: I32EnumAttr<
                         "CompareOpKind", "Determines the kind of comparison done by CompareOp",
                         [Equal]> {
-  let cppNamespace = "p4mlir";
-  //let stringToSymbolFnName = "ConvertToEnum";
-  //let symbolToStringFnName = "ConvertToString";
+    let cppNamespace = "p4mlir";
+    //let stringToSymbolFnName = "ConvertToEnum";
+    //let symbolToStringFnName = "ConvertToString";
 }
 
 def CompareOp : P4Op<"cmp", [Pure, SameTypeOperands]> {

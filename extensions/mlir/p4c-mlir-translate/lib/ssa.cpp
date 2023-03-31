@@ -140,18 +140,26 @@ ordered_set<const IR::IDeclaration *> SSAInfo::Builder::getPhiInfo(
     return decls;
 }
 
+// TODO: add IContainer 'context' argument to retrieve block params and
+// allow providing decl as BlockStatement for apply methods
 SSAInfo::SSAInfo(std::pair<const IR::IDeclaration *, const BasicBlock *> cfg,
                  const P4::ReferenceMap *refMap, const P4::TypeMap *typeMap) {
     CHECK_NULL(cfg.first, cfg.second, refMap, typeMap);
     auto* entry = cfg.second;
-    auto* func = cfg.first->to<IR::Declaration>();
-    CHECK_NULL(func);
+    auto* decl = cfg.first;
 
     Builder b;
 
     // Collect variables that cannot be stored into SSA values
     GatherOutArgsScalars g(refMap, typeMap);
-    func->apply(g);
+    if (auto* act = decl->to<IR::P4Action>()) {
+        act->apply(g);
+    } else if (auto* control = decl->to<IR::P4Control>()) {
+        control->type->applyParams->apply(g);
+        control->body->apply(g);
+    } else {
+        BUG_CHECK(false, "Not implemented");
+    }
     auto forbidden = g.get();
 
     // For each variable collect blocks where it is written
@@ -203,10 +211,12 @@ SSAInfo::SSAInfo(std::pair<const IR::IDeclaration *, const BasicBlock *> cfg,
     };
 
     // In P4 dialect, action parameters are represented as block parameters of the entry block.
-    // MLIR block parameters are equal to phi nodes which is how we represent action parameters here
-    auto createParameters = [&]() {
-        auto* action = func->to<IR::P4Action>();
-        BUG_CHECK(action, "Not implemented");
+    // MLIR block parameters are equal to phi nodes which is how we represent action parameters
+    // here. This applies if parameters belong directly to the body, which is the case only for P4
+    // actions
+    auto createActionParameters = [&]() {
+        auto* action = decl->to<IR::P4Action>();
+        BUG_CHECK(action, "Parameters can be added only for P4 actions");
         GatherSSAReferences refs(typeMap, refMap, forbidden);
         action->parameters->apply(refs);
         auto writes = refs.getWrites();
@@ -215,9 +225,16 @@ SSAInfo::SSAInfo(std::pair<const IR::IDeclaration *, const BasicBlock *> cfg,
         });
     };
 
-    auto numberSSAValues = [&]() {
+    // Assigns number to each SSA value reference including phi nodes.
+    // 'blockParams' can be used to specify SSA values that are not defined
+    // within the current CFG but are read within the current CFG.
+    // e.g. Apply parameters of the P4Control
+    auto numberSSAValues = [&](ordered_set<const IR::IDeclaration*> blockParams) {
         ordered_map<const IR::IDeclaration*, ID> nextIDs;
         ordered_map<const IR::IDeclaration*, std::stack<ID>> stkIDs;
+        std::for_each(blockParams.begin(), blockParams.end(), [&](auto* param) {
+            stkIDs[param].push((ID)0);
+        });
         rename(entry, b, nextIDs, stkIDs, domTree, typeMap, refMap, forbidden);
     };
 
@@ -225,8 +242,18 @@ SSAInfo::SSAInfo(std::pair<const IR::IDeclaration *, const BasicBlock *> cfg,
     for (auto& [decl, blocks] : declToBlocks) {
         createPhiNodes(decl, blocks);
     }
-    createParameters();
-    numberSSAValues();
+    if (decl->is<IR::P4Action>()) {
+        createActionParameters();
+    }
+    // P4Parser or P4Control
+    ordered_set<const IR::IDeclaration*> blockParams;
+    if (auto* block = decl->to<IR::IApply>()) {
+        auto& params = block->getApplyParameters()->parameters;
+        for (auto* param : params) {
+            blockParams.insert(param);
+        }
+    }
+    numberSSAValues(blockParams);
 
     phiInfo = b.movePhiInfo();
     ssaRefIDs = b.moveRefsInfo();

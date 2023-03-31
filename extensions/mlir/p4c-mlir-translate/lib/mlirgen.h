@@ -172,7 +172,12 @@ class MLIRGenImpl : public Inspector
     }
 
  private:
+    bool preorder(const IR::P4Control* control) override;
     bool preorder(const IR::P4Action* action) override;
+
+    // Generates MLIR for CFG of 'decl', MLIR blocks are inserted into 'targetRegion'.
+    // CFG must be accessible through `cfg['decl']`
+    void genMLIRFromCFG(const IR::IDeclaration* decl, mlir::Region& targetRegion);
 
 };
 
