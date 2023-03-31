@@ -176,7 +176,7 @@ bool MLIRGenImpl::preorder(const IR::P4Action* action) {
     // For each BasicBlock create MLIR Block and insert it into the ActionOp region
     BUG_CHECK(cfg.count(action), "Could not retrive cfg");
     ordered_map<const BasicBlock*, mlir::Block*> mapping;
-    CFGWalker::preorder(cfg.at(action), [&](BasicBlock* bb) {
+    CFGWalker::controlFlowTraversal(cfg.at(action), [&](BasicBlock* bb) {
         auto& block = actOp.getBody().emplaceBlock();
         mapping.insert({bb, &block});
     });

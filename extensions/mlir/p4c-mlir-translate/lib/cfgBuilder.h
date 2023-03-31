@@ -176,6 +176,24 @@ class CFGWalker
         preorder(entry, visited, func);
     }
 
+    // Traverses the blocks from top to bottom as if they were ordered the same way as the P4
+    // program from which they originate from
+    template <typename BBType, typename Func>
+    static void controlFlowTraversal(BBType* entry, Func func) {
+        CHECK_NULL(entry);
+
+        // Compute incoming degree for each block
+        ordered_map<BBType*, int> indegree;
+        forEachBlock(entry, [&](BBType* bb) {
+            for (auto* succ : bb->succs) {
+                ++indegree[succ];
+            }
+        });
+
+        ordered_set<BBType*> visited;
+        controlFlowTraversalImpl(entry, visited, func, indegree);
+    }
+
     // TODO: This is not erase. More like follow-through
     // TODO: remove this
     template <typename Func>
@@ -236,6 +254,24 @@ class CFGWalker
             postorder((BBType*)succ, visited, func);
         }
         func(bb);
+    }
+
+    template <typename BBType, typename Func>
+    static void controlFlowTraversalImpl(BBType *bb, ordered_set<BBType *> &visited, Func func,
+                                         ordered_map<BBType*, int>& indegree) {
+        if (visited.count(bb)) {
+            return;
+        }
+        visited.insert(bb);
+        func(bb);
+        for (auto* succ : bb->succs) {
+            --indegree.at(succ);
+            BUG_CHECK(indegree.at(succ) >= 0, "Found more prdecessors than incoming degree");
+            // Visit successor only if this is the last predecessor
+            if (indegree.at(succ) == 0) {
+                controlFlowTraversalImpl(succ, visited, func, indegree);
+            }
+        }
     }
 };
 
