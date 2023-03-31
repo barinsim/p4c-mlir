@@ -182,13 +182,9 @@ class CFGWalker
     static void controlFlowTraversal(BBType* entry, Func func) {
         CHECK_NULL(entry);
 
-        // Compute incoming degree for each block
         ordered_map<BBType*, int> indegree;
-        forEachBlock(entry, [&](BBType* bb) {
-            for (auto* succ : bb->succs) {
-                ++indegree[succ];
-            }
-        });
+        ordered_map<BBType*, int> tag;
+        computeIndegree(entry, indegree, tag);
 
         ordered_set<BBType*> visited;
         controlFlowTraversalImpl(entry, visited, func, indegree);
@@ -272,6 +268,29 @@ class CFGWalker
                 controlFlowTraversalImpl(succ, visited, func, indegree);
             }
         }
+    }
+
+    // Computes incoming degree for each block.
+    // Ignores back edges (edge that goes into a node which has tag[node] == 1).
+    // Cross and forward edges are ok
+    template <typename BBType>
+    static void computeIndegree(BBType *bb, ordered_map<BBType*, int>& indegree,
+                                ordered_map<BBType*, int>& tag) {
+        if (tag[bb] != 0) {
+            return;
+        }
+        // Open
+        tag[bb] = 1;
+        for (auto* succ : bb->succs) {
+            // Ignore back-edges
+            if (tag[succ] == 1) {
+                continue;
+            }
+            ++indegree[succ];
+            computeIndegree(succ, indegree, tag);
+        }
+        // Close
+        tag[bb] = 2;
     }
 };
 
