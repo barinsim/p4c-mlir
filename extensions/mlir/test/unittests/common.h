@@ -13,7 +13,7 @@
 namespace p4mlir::tests {
 
 
-BasicBlock* getByName(const std::map<const IR::IDeclaration*, BasicBlock*>&, const std::string&);
+BasicBlock* getByName(const std::map<const IR::Node*, BasicBlock*>&, const std::string&);
 
 // This is a simple way how to get 'BasicBlock' that contains 'stmt' statement.
 // It relies on a unique string representation of the statement within the whole program.

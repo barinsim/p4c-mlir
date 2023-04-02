@@ -8,10 +8,17 @@
 namespace p4mlir::tests {
 
 
-BasicBlock* getByName(const std::map<const IR::IDeclaration*, BasicBlock*>& cfg,
+BasicBlock* getByName(const std::map<const IR::Node*, BasicBlock*>& cfg,
                       const std::string& name) {
     auto it = std::find_if(cfg.begin(), cfg.end(), [&](auto& p) {
-        return p.first->getName() == name;
+        auto* node = p.first;
+        if (auto* decl = node->template to<IR::IDeclaration>()) {
+            return decl->getName() == name;
+        }
+        if (auto* bs = node->template to<IR::BlockStatement>()) {
+            // Apply method can be found using empty string
+            return name == "";
+        }
     });
     if (it == cfg.end()) {
         throw std::domain_error("The declaration name does not exist in the cfg");

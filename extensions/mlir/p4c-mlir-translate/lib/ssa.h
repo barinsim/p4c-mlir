@@ -142,9 +142,14 @@ class SSAInfo
     };
 
 public:
-    SSAInfo(std::pair<const IR::IDeclaration*, const BasicBlock*> cfg,
+    // Calculates SSA form. Determines phi nodes positions and numbers P4 references of SSA values.
+    // 'context' is used to take apply parameters of the outter block into account, can be null.
+    SSAInfo(const IR::IApply* context, std::pair<const IR::Node*, const BasicBlock*> cfg,
             const P4::ReferenceMap* refMap, const P4::TypeMap* typeMap);
 
+    // Returns calculated phi nodes info for block 'bb'.
+    // Return value states for which variables there exists a phi node and what numbering was
+    // calculated for phi node arguments and destination
     ordered_map<const IR::IDeclaration*, Phi> getPhiInfo(const BasicBlock* bb) const {
         if (phiInfo.count(bb)) {
             return phiInfo.at(bb);

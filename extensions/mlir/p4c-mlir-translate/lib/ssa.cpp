@@ -140,25 +140,21 @@ ordered_set<const IR::IDeclaration *> SSAInfo::Builder::getPhiInfo(
     return decls;
 }
 
-// TODO: add IContainer 'context' argument to retrieve block params and
-// allow providing decl as BlockStatement for apply methods
-SSAInfo::SSAInfo(std::pair<const IR::IDeclaration *, const BasicBlock *> cfg,
+SSAInfo::SSAInfo(const IR::IApply* context, std::pair<const IR::Node*, const BasicBlock*> cfg,
                  const P4::ReferenceMap *refMap, const P4::TypeMap *typeMap) {
     CHECK_NULL(cfg.first, cfg.second, refMap, typeMap);
     auto* entry = cfg.second;
     auto* decl = cfg.first;
+    BUG_CHECK(decl->is<IR::P4Action>() || decl->is<IR::BlockStatement>(),
+              "SSA can be computed only for actions and apply methods");
 
     Builder b;
 
     // Collect variables that cannot be stored into SSA values
     GatherOutArgsScalars g(refMap, typeMap);
-    if (auto* act = decl->to<IR::P4Action>()) {
-        act->apply(g);
-    } else if (auto* control = decl->to<IR::P4Control>()) {
-        control->type->applyParams->apply(g);
-        control->body->apply(g);
-    } else {
-        BUG_CHECK(false, "Not implemented");
+    decl->apply(g);
+    if (context) {
+        context->getApplyParameters()->apply(g);
     }
     auto forbidden = g.get();
 
@@ -226,15 +222,16 @@ SSAInfo::SSAInfo(std::pair<const IR::IDeclaration *, const BasicBlock *> cfg,
     };
 
     // Assigns number to each SSA value reference including phi nodes.
-    // 'blockParams' can be used to specify SSA values that are not defined
-    // within the current CFG but are read within the current CFG.
-    // e.g. Apply parameters of the P4Control
-    auto numberSSAValues = [&](ordered_set<const IR::IDeclaration*> blockParams) {
+    // Considers outter apply parameters of a context as well
+    auto numberSSAValues = [&]() {
         ordered_map<const IR::IDeclaration*, ID> nextIDs;
         ordered_map<const IR::IDeclaration*, std::stack<ID>> stkIDs;
-        std::for_each(blockParams.begin(), blockParams.end(), [&](auto* param) {
-            stkIDs[param].push((ID)0);
-        });
+        if (context) {
+            auto& params = context->getApplyParameters()->parameters;
+            std::for_each(params.begin(), params.end(), [&](auto* param) {
+                stkIDs[param].push((ID)0);
+            });
+        }
         rename(entry, b, nextIDs, stkIDs, domTree, typeMap, refMap, forbidden);
     };
 
@@ -245,15 +242,7 @@ SSAInfo::SSAInfo(std::pair<const IR::IDeclaration *, const BasicBlock *> cfg,
     if (decl->is<IR::P4Action>()) {
         createActionParameters();
     }
-    // P4Parser or P4Control
-    ordered_set<const IR::IDeclaration*> blockParams;
-    if (auto* block = decl->to<IR::IApply>()) {
-        auto& params = block->getApplyParameters()->parameters;
-        for (auto* param : params) {
-            blockParams.insert(param);
-        }
-    }
-    numberSSAValues(blockParams);
+    numberSSAValues();
 
     phiInfo = b.movePhiInfo();
     ssaRefIDs = b.moveRefsInfo();

@@ -105,7 +105,7 @@ bool CFGBuilder::preorder(const IR::P4Control* control) {
     visit(control->controlLocals);
     BasicBlock* entryBlock = new BasicBlock(*Scope::create());
     b.enterBasicBlock(entryBlock);
-    b.callableToCFG.insert({control, entryBlock});
+    b.callableToCFG.insert({control->body, entryBlock});
     visit(control->body);
     return false;
 }

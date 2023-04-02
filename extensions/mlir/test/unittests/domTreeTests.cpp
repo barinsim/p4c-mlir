@@ -232,7 +232,7 @@ TEST_F(DomTree, Test_fall_through_switch_statement) {
     auto all = b->getCFG();
 
     ASSERT_EQ(all.size(), (std::size_t)4);
-    auto* cfgApply = getByName(all, "TopPipe"); // TODO: import this func
+    auto* cfgApply = getByName(all, "");
     ASSERT_TRUE(cfgApply);
 
     p4mlir::BasicBlock* bb1 = getByStmtString(cfgApply, "label = 1;");

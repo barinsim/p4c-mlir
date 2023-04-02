@@ -180,7 +180,7 @@ bool MLIRGenImpl::preorder(const IR::P4Control* control) {
 
     // Generate the apply method
     auto applyOp = builder.create<p4mlir::ApplyOp>(loc(builder, control));
-    genMLIRFromCFG(control, applyOp.getBody());
+    genMLIRFromCFG(control->body, applyOp.getBody());
 
     builder.restoreInsertionPoint(saved);
     return false;
@@ -199,7 +199,7 @@ bool MLIRGenImpl::preorder(const IR::P4Action* action) {
     return false;
 }
 
-void MLIRGenImpl::genMLIRFromCFG(const IR::IDeclaration* decl, mlir::Region& targetRegion) {
+void MLIRGenImpl::genMLIRFromCFG(const IR::Node* decl, mlir::Region& targetRegion) {
     CHECK_NULL(decl);
     BUG_CHECK(cfg.count(decl), "Could retrieve CFG for the declaration");
     auto saved = builder.saveInsertionPoint();
@@ -215,7 +215,8 @@ void MLIRGenImpl::genMLIRFromCFG(const IR::IDeclaration* decl, mlir::Region& tar
     });
 
     // Create ssa mapping for this cfg
-    SSAInfo ssaInfo({decl, entry}, refMap, typeMap);
+    auto* context = findContext<IR::IApply>();
+    SSAInfo ssaInfo(context, {decl, entry}, refMap, typeMap);
 
     // Stores mapping of P4 ssa values to its MLIR counterparts.
     // This mapping is used during MLIRgen to resolve references

@@ -177,7 +177,7 @@ class MLIRGenImpl : public Inspector
 
     // Generates MLIR for CFG of 'decl', MLIR blocks are inserted into 'targetRegion'.
     // CFG must be accessible through `cfg['decl']`
-    void genMLIRFromCFG(const IR::IDeclaration* decl, mlir::Region& targetRegion);
+    void genMLIRFromCFG(const IR::Node* decl, mlir::Region& targetRegion);
 
 };
 

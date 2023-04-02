@@ -296,7 +296,7 @@ TEST_F(CFGBuilder, Test_control_block_with_control_flow) {
     auto cfgSmac = getByName(all, "Set_smac");
     auto* cfgEmpty = getByName(all, "Empty");
     auto* cfgAlmostEmpty = getByName(all, "Almost_empty");
-    auto* cfgApply = getByName(all, "TopPipe");
+    auto* cfgApply = getByName(all, "");
     ASSERT_TRUE(cfgNhop);
     ASSERT_TRUE(cfgSmac);
     ASSERT_TRUE(cfgEmpty);
@@ -444,7 +444,7 @@ TEST_F(CFGBuilder, Test_switch_statement) {
     auto all = b->getCFG();
 
     ASSERT_EQ(all.size(), (std::size_t)4);
-    auto* cfgApply = getByName(all, "TopPipe");
+    auto* cfgApply = getByName(all, "");
     ASSERT_TRUE(cfgApply);
 
     CFG_EXPECT_FUZZY_EQ(cfgApply,
@@ -507,7 +507,7 @@ TEST_F(CFGBuilder, Test_switch_statement_without_default) {
     auto all = b->getCFG();
 
     ASSERT_EQ(all.size(), (std::size_t)4);
-    auto* cfgApply = getByName(all, "TopPipe");
+    auto* cfgApply = getByName(all, "");
     ASSERT_TRUE(cfgApply);
 
     // Last successor in the list is always the 'none matched'
@@ -575,7 +575,7 @@ TEST_F(CFGBuilder, Test_fall_through_switch_statement) {
     auto all = b->getCFG();
 
     ASSERT_EQ(all.size(), (std::size_t)4);
-    auto* cfgApply = getByName(all, "TopPipe");
+    auto* cfgApply = getByName(all, "");
     ASSERT_TRUE(cfgApply);
 
     CFG_EXPECT_FUZZY_EQ(cfgApply,
@@ -641,7 +641,7 @@ TEST_F(CFGBuilder, Test_wierd_fall_through_switch_statement) {
     auto all = b->getCFG();
 
     ASSERT_EQ(all.size(), (std::size_t)4);
-    auto* cfgApply = getByName(all, "TopPipe");
+    auto* cfgApply = getByName(all, "");
     ASSERT_TRUE(cfgApply);
 
     CFG_EXPECT_FUZZY_EQ(cfgApply,
@@ -692,7 +692,7 @@ TEST_F(CFGBuilder, Test_wierd_fall_through_switch_statement_without_default) {
     auto all = b->getCFG();
 
     ASSERT_EQ(all.size(), (std::size_t)4);
-    auto* cfgApply = getByName(all, "TopPipe");
+    auto* cfgApply = getByName(all, "");
     ASSERT_TRUE(cfgApply);
 
     CFG_EXPECT_FUZZY_EQ(cfgApply,

@@ -61,7 +61,7 @@ std::string toString(const BasicBlock* bb, int indent = 0);
 class CFGBuilder : public Inspector 
 {
  public:
-    using CFGType = std::map<const IR::IDeclaration*, BasicBlock*>;
+    using CFGType = std::map<const IR::Node*, BasicBlock*>;
 
  public:
     // This ctr allows usage within a PassManager where 'cfg' is input further down the pipeline
@@ -70,7 +70,7 @@ class CFGBuilder : public Inspector
     // Relies on the garbage collector
     CFGBuilder() : b(*(new CFGType())) {}
 
-    std::map<const IR::IDeclaration*, BasicBlock*> getCFG() const {
+    CFGType getCFG() const {
         return b.callableToCFG;
     }
 

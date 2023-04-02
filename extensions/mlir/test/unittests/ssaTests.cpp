@@ -47,7 +47,7 @@ TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action_1) {
     ASSERT_EQ(cfg.size(), (std::size_t)1);
     ASSERT_TRUE(::errorCount() == 0);
 
-    p4mlir::SSAInfo ssaInfo(*cfg.begin(), refMap, typeMap);
+    p4mlir::SSAInfo ssaInfo(nullptr, *cfg.begin(), refMap, typeMap);
     ASSERT_TRUE(::errorCount() == 0);
 
     auto* foo = getByName(cfg, "foo");
@@ -189,7 +189,7 @@ TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action_2) {
     auto cfgFoo = getByName(cfg, "foo");
     ASSERT_TRUE(::errorCount() == 0);
 
-    p4mlir::SSAInfo ssaInfo(*cfg.begin(), refMap, typeMap);
+    p4mlir::SSAInfo ssaInfo(nullptr, *cfg.begin(), refMap, typeMap);
     ASSERT_TRUE(::errorCount() == 0);
 
     auto* bb1 = getByStmtString(cfgFoo, "int<16> x1 = (int<16>)16s1;");
