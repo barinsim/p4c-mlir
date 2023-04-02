@@ -227,9 +227,10 @@ SSAInfo::SSAInfo(const IR::IApply* context, std::pair<const IR::Node*, const Bas
         ordered_map<const IR::IDeclaration*, ID> nextIDs;
         ordered_map<const IR::IDeclaration*, std::stack<ID>> stkIDs;
         if (context) {
-            auto& params = context->getApplyParameters()->parameters;
-            std::for_each(params.begin(), params.end(), [&](auto* param) {
+            auto* params = context->getApplyParameters();
+            std::for_each(params->begin(), params->end(), [&](auto* param) {
                 stkIDs[param].push((ID)0);
+                b.numberRef((ID)0, param);
             });
         }
         rename(entry, b, nextIDs, stkIDs, domTree, typeMap, refMap, forbidden);
@@ -282,7 +283,7 @@ void SSAInfo::rename(const BasicBlock *block, Builder &b,
     for (auto* succ : block->succs) {
         auto succVars = b.getPhiInfo(succ);
         for (auto* var : succVars) {
-            BUG_CHECK(!stkIDs[var].empty(), "Cannot number SSA use without previous def");
+            BUG_CHECK(!stkIDs[var].empty(), "Cannot number phi node argument without previous def");
             b.numberPhiSource(stkIDs[var].top(), succ, var, block);
         }
     }

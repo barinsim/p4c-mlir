@@ -175,11 +175,18 @@ bool MLIRGenImpl::preorder(const IR::P4Control* control) {
     auto& block = controlOp.getBody().emplaceBlock();
     builder.setInsertionPointToStart(&block);
 
+    // Add P4 apply parameters as MLIR block parameters
+    auto* applyParams = control->getApplyParameters();
+    std::for_each(applyParams->begin(), applyParams->end(), [&](const IR::Declaration* param) {
+        auto type = toMLIRType(builder, typeMap->getType(param));
+        block.addArgument(type, loc(builder, control));
+    });
+
     // Generate everything within control block apart from the apply method
     visit(control->controlLocals);
 
     // Generate the apply method
-    auto applyOp = builder.create<p4mlir::ApplyOp>(loc(builder, control));
+    auto applyOp = builder.create<p4mlir::ApplyOp>(loc(builder, control->body));
     genMLIRFromCFG(control->body, applyOp.getBody());
 
     builder.restoreInsertionPoint(saved);
@@ -215,7 +222,10 @@ void MLIRGenImpl::genMLIRFromCFG(const IR::Node* decl, mlir::Region& targetRegio
     });
 
     // Create ssa mapping for this cfg
-    auto* context = findContext<IR::IApply>();
+    auto* context = getCurrentNode<IR::IApply>();
+    if (!context) {
+        context = findContext<IR::IApply>();
+    }
     SSAInfo ssaInfo(context, {decl, entry}, refMap, typeMap);
 
     // Stores mapping of P4 ssa values to its MLIR counterparts.
@@ -239,6 +249,23 @@ void MLIRGenImpl::genMLIRFromCFG(const IR::Node* decl, mlir::Region& targetRegio
             ssaRefMap.insert({ref, arg});
         }
     });
+
+    // Add mapping of the outter apply parameters, so that references of these parameters can be
+    // resolved. These MLIR parameters must already be created
+    if (context) {
+        mlir::Region* parent = targetRegion.getParentRegion();
+        auto blockParams = parent->getArguments();
+        auto* applyParams = context->getApplyParameters();
+        BUG_CHECK(blockParams.size() == applyParams->size(),
+                  "Number of P4 apply parameters and MLIR block parameters must match");
+        for (int i = 0; i < blockParams.size(); ++i) {
+            auto* applyParam = applyParams->getParameter(i);
+            BUG_CHECK(ssaInfo.isSSARef(applyParam), "Could not find SSA info for the parameter");
+            auto id = ssaInfo.getID(applyParam);
+            SSARefType ref{applyParam, id};
+            ssaRefMap.insert({ref, blockParams[i]});
+        }
+    }
 
     // Fill the MLIR Blocks with Ops
     MLIRGenImplCFG cfgGen(builder, mapping, typeMap, refMap, ssaInfo, ssaRefMap);
