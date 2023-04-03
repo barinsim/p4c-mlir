@@ -27,15 +27,20 @@ def ConstantOp : P4Op<"constant"> {
 def ControlOp : P4Op<"control", [IsolatedFromAbove, NoTerminator]> {
     let arguments = (ins SymbolNameAttr:$sym_name);
     let regions = (region SizedRegion<1>:$body);
+
+    let hasCustomAssemblyFormat = 1;
 }
 
 def ActionOp : P4Op<"action"> {
     let arguments = (ins SymbolNameAttr:$sym_name);
     let regions = (region MinSizedRegion<1>:$body);
+
+    let hasCustomAssemblyFormat = 1;
 }
 
 def ApplyOp : P4Op<"apply", [HasParent<"ControlOp">]> {
     let regions = (region MinSizedRegion<1>:$body);
+    let assemblyFormat = "attr-dict regions";
 }
 
 def ReturnOp : P4Op<"return", [Pure, ParentOneOf<["ActionOp", "ApplyOp"]>, Terminator]> {
@@ -67,8 +72,7 @@ def CompareOpKindAttr: I32EnumAttr<
 def CompareOp : P4Op<"cmp", [Pure, SameTypeOperands]> {
     let arguments = (ins CompareOpKindAttr:$kind, Builtin_Integer:$lhs, Builtin_Integer:$rhs);
     let results = (outs I1:$result);
-
-    //let assemblyFormat = "attr-dict";
+    let assemblyFormat = "attr-dict `(` $lhs `,` $rhs `)` $kind  `:` `(` type($lhs) `,` type($rhs) `)` `->` type($result)";
 }
 
 

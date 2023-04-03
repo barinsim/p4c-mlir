@@ -21,10 +21,9 @@ control Pipe(bit<10> arg1, in int<16> arg2) {
 
 // CHECK-LABEL: module
 
-// CHECK: p4.control
-// CHECK: ^bb0(%arg0: ui10, %arg1: si16):
-// CHECK: "p4.action"
-// CHECK: %0 = p4.constant 3 : si16
+// CHECK: p4.control @Pipe(%arg0: ui10, %arg1: si16)
+// CHECK: p4.action @foo()
+// CHECK-NEXT: %0 = p4.constant 3 : si16
 // CHECK-NEXT: %1 = p4.cast(%0) : si16 -> si16
 // CHECK-NEXT: %2 = p4.copy(%1) : si16 -> si16
 // CHECK-NEXT: %3 = p4.constant 4 : si16
@@ -32,7 +31,7 @@ control Pipe(bit<10> arg1, in int<16> arg2) {
 // CHECK-NEXT: %5 = p4.copy(%4) : si16 -> si16
 // CHECK-NEXT: p4.return
 
-// CHECK: p4.action
+// CHECK: p4.action @bar()
 // CHECK: %0 = p4.constant 2 : ui10
 // CHECK-NEXT: %1 = p4.cast(%0) : ui10 -> ui10
 // CHECK-NEXT: %2 = p4.copy(%1) : ui10 -> ui10
@@ -47,7 +46,7 @@ control Pipe(bit<10> arg1, in int<16> arg2) {
 // CHECK-NEXT: %4 = p4.copy(%arg1) : si16 -> si16
 // CHECK-NEXT: %5 = p4.constant 3 : si64
 // CHECK-NEXT: %6 = p4.cast(%5) : si64 -> si16
-// CHECK-NEXT: %7 = "p4.cmp"(%arg1, %6) {kind = 0 : i32} : (si16, si16) -> i1
+// CHECK-NEXT: %7 = p4.cmp(%arg1, %6) eq : (si16, si16) -> i1
 // CHECK-NEXT: cf.cond_br %7, ^bb1, ^bb2(%4 : si16)
 
 // CHECK: ^bb1:

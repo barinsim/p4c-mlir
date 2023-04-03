@@ -31,7 +31,7 @@ action foo() {
 // CHECK-NEXT: %8 = p4.copy(%7) : si16 -> si16
 // CHECK-NEXT: %9 = p4.constant 2 : si64
 // CHECK-NEXT: %10 = p4.cast(%9) : si64 -> si16
-// CHECK-NEXT: %11 = "p4.cmp"(%2, %10) {kind = 0 : i32} : (si16, si16) -> i1
+// CHECK-NEXT: %11 = p4.cmp(%2, %10) eq : (si16, si16) -> i1
 // CHECK-NEXT: cf.cond_br %11, ^bb1, ^bb2
 
     // CHECK: ^bb1:
@@ -53,7 +53,7 @@ action foo() {
     // CHECK-NEXT: cf.br ^bb3(%23, %5, %20 : si16, si16, si16)
 
 // CHECK: ^bb3(%24: si16, %25: si16, %26: si16):
-// CHECK-NEXT: %27 = "p4.cmp"(%24, %25) {kind = 0 : i32} : (si16, si16) -> i1
+// CHECK-NEXT: %27 = p4.cmp(%24, %25) eq : (si16, si16) -> i1
 // CHECK-NEXT: cf.cond_br %27, ^bb4, ^bb5(%24 : si16)
 
     // CHECK: ^bb4:
