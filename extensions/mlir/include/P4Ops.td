@@ -2,12 +2,13 @@
 #define STANDALONE_OPS
 
 include "P4Dialect.td"
+
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/OpBase.td"
 include "mlir/IR/BuiltinTypes.td"
 include "mlir/IR/EnumAttr.td"
-
 
 def ConstantOp : P4Op<"constant"> {
     // TODO: for some reason these must be prefixed with Builtin_
@@ -75,5 +76,19 @@ def CompareOp : P4Op<"cmp", [Pure, SameTypeOperands]> {
     let assemblyFormat = "attr-dict `(` $lhs `,` $rhs `)` $kind  `:` `(` type($lhs) `,` type($rhs) `)` `->` type($result)";
 }
 
+def UninitializedOp : P4Op<"uninitialized"> {
+    let results = (outs AnyType:$result);
+    let assemblyFormat = "attr-dict `:` type($result)";
+}
+
+class P4Dialect_Type<string name, string typeMnemonic, list<Trait> traits = []>
+    : TypeDef<P4Dialect, name, traits> {
+  let mnemonic = typeMnemonic;
+}
+
+def HeaderType : P4Dialect_Type<"Header", "header"> {
+    let parameters = (ins StringRefParameter<"Header type name">:$name);
+    let assemblyFormat = "`<` $name `>`";
+}
 
 #endif // STANDALONE_OPS

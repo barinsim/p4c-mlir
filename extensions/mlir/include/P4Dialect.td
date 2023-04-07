@@ -1,5 +1,5 @@
-#ifndef STANDALONE_DIALECT
-#define STANDALONE_DIALECT
+#ifndef P4_DIALECT
+#define P4_DIALECT
 
 include "mlir/IR/OpBase.td"
 include "mlir/IR/BuiltinAttributes.td"
@@ -15,16 +15,16 @@ def P4Dialect : Dialect {
     let cppNamespace = "p4mlir";
     let dependentDialects = ["::mlir::cf::ControlFlowDialect"];
 
+    //let useDefaultTypePrinterParser = 1;
+    let useDefaultTypePrinterParser = 1;
     let useFoldAPI = kEmitFoldAdaptorFolder;
 }
 
 //===----------------------------------------------------------------------===//
-// Base standalone operation definition.
+// Base p4 operation definition.
 //===----------------------------------------------------------------------===//
 
 class P4Op<string mnemonic, list<Trait> traits = []> :
         Op<P4Dialect, mnemonic, traits>;
 
-#endif // STANDALONE_DIALECT
-
- // ../../../../../llvm-project/build/bin/mlir-tblgen -gen-dialect-decls P4Dialect.td -I../../../../../llvm-project/mlir/include/
+#endif  // P4_DIALECT

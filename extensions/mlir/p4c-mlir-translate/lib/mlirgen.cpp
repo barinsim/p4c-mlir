@@ -16,12 +16,20 @@ mlir::Type toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) {
     if (p4type->is<IR::Type_InfInt>()) {
         // TODO: create special type
         return mlir::IntegerType::get(builder.getContext(), 64, mlir::IntegerType::Signed);
-    } else if (auto* bits = p4type->to<IR::Type_Bits>()) {
+    }
+    else if (auto* bits = p4type->to<IR::Type_Bits>()) {
         auto sign = bits->isSigned ? mlir::IntegerType::Signed : mlir::IntegerType::Unsigned;
         int size = bits->size;
         return mlir::IntegerType::get(builder.getContext(), size, sign);
-    } else if (p4type->is<IR::Type_Boolean>()) {
+    }
+    else if (p4type->is<IR::Type_Boolean>()) {
         return mlir::IntegerType::get(builder.getContext(), 1, mlir::IntegerType::Signless);
+    }
+    else if (auto* hdr = p4type->to<IR::Type_Header>()) {
+        cstring name = hdr->name;
+        auto type = p4mlir::HeaderType::get(builder.getContext(), llvm::StringRef(name.c_str()));
+        BUG_CHECK(type, "Could not retrieve Header type");
+        return type;
     }
 
     throw std::domain_error("Not implemented");
@@ -80,8 +88,10 @@ void MLIRGenImplCFG::postorder(const IR::AssignmentStatement* assign) {
 
 void MLIRGenImplCFG::postorder(const IR::Declaration_Variable* decl) {
     if (!decl->initializer) {
-        // TODO: undefined variable
-        BUG_CHECK(false, "Not implemented");
+        auto type = toMLIRType(builder, typeMap->getType(decl));
+        mlir::Value value = builder.create<p4mlir::UninitializedOp>(loc(builder, decl), type);
+        addValue(decl, value);
+        return;
     }
     mlir::Value init = toValue(decl->initializer);
     mlir::Value value = builder.create<p4mlir::CopyOp>(loc(builder, decl), init);
@@ -302,6 +312,11 @@ void MLIRGenImpl::genMLIRFromCFG(const IR::Node* decl, mlir::Region& targetRegio
     });
 
     builder.restoreInsertionPoint(saved);
+}
+
+bool MLIRGenImpl::preorder(const IR::Header* hdr) {
+    //mlir::TypeSubElementReplacements
+    return true;
 }
 
 mlir::OwningOpRef<mlir::ModuleOp>

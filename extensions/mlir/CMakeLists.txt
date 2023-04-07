@@ -18,6 +18,10 @@ include(AddLLVM)
 include(AddMLIR)
 include(HandleLLVMOptions)
 
+# LLVM turns off exceptions by default, let's turn them on
+set(LLVM_ENABLE_EH ON)
+set(LLVM_REQUIRES_RTTI ON)
+
 include_directories(${LLVM_INCLUDE_DIRS})
 include_directories(${MLIR_INCLUDE_DIRS})
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}/include)

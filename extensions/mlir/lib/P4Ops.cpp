@@ -5,10 +5,11 @@
 
 #include "mlir/IR/OpImplementation.h"
 #include "mlir/IR/SymbolTable.h"
+#include "mlir/IR/DialectImplementation.h"
 
-#define GET_OP_CLASSES
 #include "P4OpsEnumAttr.cpp.inc"
 #include "P4OpsAttr.cpp.inc"
+#define GET_OP_CLASSES
 #include "P4Ops.cpp.inc"
 
 
