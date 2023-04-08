@@ -314,9 +314,19 @@ void MLIRGenImpl::genMLIRFromCFG(const IR::Node* decl, mlir::Region& targetRegio
     builder.restoreInsertionPoint(saved);
 }
 
-bool MLIRGenImpl::preorder(const IR::Header* hdr) {
-    //mlir::TypeSubElementReplacements
-    return true;
+bool MLIRGenImpl::preorder(const IR::Type_Header* hdr) {
+    // Create HeaderOp and insert 1 block
+    cstring name = hdr->name;
+    auto hdrOp = builder.create<p4mlir::HeaderOp>(loc(builder, hdr), llvm::StringRef(name.c_str()));
+    auto saved = builder.saveInsertionPoint();
+    auto& block = hdrOp.getBody().emplaceBlock();
+    builder.setInsertionPointToEnd(&block);
+
+    // Generate member declarations
+    visit(hdr->fields);
+
+    builder.restoreInsertionPoint(saved);
+    return false;
 }
 
 mlir::OwningOpRef<mlir::ModuleOp>

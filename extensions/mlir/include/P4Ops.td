@@ -5,6 +5,7 @@ include "P4Dialect.td"
 
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/IR/SymbolInterfaces.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/OpBase.td"
 include "mlir/IR/BuiltinTypes.td"
@@ -32,7 +33,7 @@ def ControlOp : P4Op<"control", [IsolatedFromAbove, NoTerminator]> {
     let hasCustomAssemblyFormat = 1;
 }
 
-def ActionOp : P4Op<"action"> {
+def ActionOp : P4Op<"action", [Symbol]> {
     let arguments = (ins SymbolNameAttr:$sym_name);
     let regions = (region MinSizedRegion<1>:$body);
 
@@ -79,6 +80,12 @@ def CompareOp : P4Op<"cmp", [Pure, SameTypeOperands]> {
 def UninitializedOp : P4Op<"uninitialized"> {
     let results = (outs AnyType:$result);
     let assemblyFormat = "attr-dict `:` type($result)";
+}
+
+def HeaderOp : P4Op<"header", [SymbolTable, Symbol, IsolatedFromAbove, NoTerminator]> {
+    let arguments = (ins SymbolNameAttr:$sym_name);
+    let regions = (region MinSizedRegion<1>:$body);
+    let assemblyFormat = "attr-dict $sym_name $body";
 }
 
 class P4Dialect_Type<string name, string typeMnemonic, list<Trait> traits = []>

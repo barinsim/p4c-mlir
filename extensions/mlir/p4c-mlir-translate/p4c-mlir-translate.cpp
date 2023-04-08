@@ -26,9 +26,20 @@ const IR::P4Program* parseP4(int argc, char** argv) {
 int main(int argc, char** argv) {
     AutoCompileContext acc(new P4CContextWithOptions<CompilerOptions>);
 
+    bool dumpAST = false;
+    if (argc > 2 && std::string(argv[2]) == "--emit-ast") {
+        dumpAST = true;
+        --argc;
+    }
+
     const IR::P4Program* program = parseP4(argc, argv);
     if (!program) {
         return 1;
+    }
+
+    if (dumpAST) {
+        dump(program);
+        return 0;
     }
 
     mlir::MLIRContext context;
