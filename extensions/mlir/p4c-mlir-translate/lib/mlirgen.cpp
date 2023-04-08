@@ -329,6 +329,13 @@ bool MLIRGenImpl::preorder(const IR::Type_Header* hdr) {
     return false;
 }
 
+bool MLIRGenImpl::preorder(const IR::StructField* field) {
+    auto type = toMLIRType(builder, field->type);
+    cstring name = field->name;
+    builder.create<p4mlir::FieldDeclOp>(loc(builder, field), llvm::StringRef(name), type);
+    return false;
+}
+
 mlir::OwningOpRef<mlir::ModuleOp>
 mlirGen(mlir::MLIRContext& context, const IR::P4Program* program) {
     mlir::OpBuilder builder(&context);

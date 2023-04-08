@@ -88,6 +88,11 @@ def HeaderOp : P4Op<"header", [SymbolTable, Symbol, IsolatedFromAbove, NoTermina
     let assemblyFormat = "attr-dict $sym_name $body";
 }
 
+def FieldDeclOp : P4Op<"field_decl", [Symbol, HasParent<"HeaderOp">]> {
+    let arguments = (ins SymbolNameAttr:$sym_name, TypeAttr:$type);
+    let assemblyFormat = "attr-dict $sym_name `:` $type";
+}
+
 class P4Dialect_Type<string name, string typeMnemonic, list<Trait> traits = []>
     : TypeDef<P4Dialect, name, traits> {
   let mnemonic = typeMnemonic;
