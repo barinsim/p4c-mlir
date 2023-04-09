@@ -13,7 +13,11 @@ header MyHeader {
 action foo() {
     // CHECK-NEXT: %0 = p4.uninitialized : !p4.header<"MyHeader">
     MyHeader hdr;
+    // CHECK-NEXT: %1 = p4.uninitialized : si16
+    int<16> x1;
+    // CHECK-NEXT: %2 = p4.get_member(%0) "f1" : !p4.header<"MyHeader"> -> si16
+    // CHECK-NEXT: %3 = p4.copy(%2) : si16 -> si16
+    x1 = hdr.f1;
     // CHECK-NEXT: p4.return
     return;
-// CHECK-NEXT: }
 }

@@ -88,7 +88,7 @@ def HeaderOp : P4Op<"header", [SymbolTable, Symbol, IsolatedFromAbove, NoTermina
     let assemblyFormat = "attr-dict $sym_name $body";
 }
 
-def FieldDeclOp : P4Op<"field_decl", [Symbol, HasParent<"HeaderOp">]> {
+def MemberDeclOp : P4Op<"member_decl", [Symbol, HasParent<"HeaderOp">]> {
     let arguments = (ins SymbolNameAttr:$sym_name, TypeAttr:$type);
     let assemblyFormat = "attr-dict $sym_name `:` $type";
 }
@@ -103,4 +103,9 @@ def HeaderType : P4Dialect_Type<"Header", "header"> {
     let assemblyFormat = "`<` $name `>`";
 }
 
+def GetMemberOp : P4Op<"get_member"> {
+    let arguments = (ins HeaderType:$base, Builtin_StringAttr:$member_name);
+    let results = (outs AnyType:$result);
+    let assemblyFormat = "attr-dict `(` $base `)` $member_name `:` qualified(type($base)) `->` type($result)";
+}
 #endif // STANDALONE_OPS

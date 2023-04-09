@@ -102,7 +102,7 @@ void MLIRGenImplCFG::postorder(const IR::Cast* cast) {
     CHECK_NULL(cast->destType);
     auto src = toValue(cast->expr);
     auto targetType = toMLIRType(builder, cast->destType);
-    auto value = builder.create<p4mlir::CastOp>(loc(builder, cast), targetType, src);
+    mlir::Value value = builder.create<p4mlir::CastOp>(loc(builder, cast), targetType, src);
     addValue(cast, value);
 }
 
@@ -112,6 +112,15 @@ void MLIRGenImplCFG::postorder(const IR::Equ* eq) {
     auto res =
         builder.create<CompareOp>(loc(builder, eq), CompareOpKind::eq, lhsValue, rhsValue);
     addValue(eq, res);
+}
+
+void MLIRGenImplCFG::postorder(const IR::Member* mem) {
+    // TODO: this needs to consider if the object is in reg or stack
+    auto type = toMLIRType(builder, typeMap->getType(mem));
+    auto name = builder.getStringAttr(mem->member.toString().c_str());
+    mlir::Value val =
+        builder.create<p4mlir::GetMemberOp>(loc(builder, mem), type, toValue(mem->expr), name);
+    addValue(mem, val);
 }
 
 bool MLIRGenImplCFG::preorder(const IR::IfStatement* ifStmt) {
@@ -332,7 +341,7 @@ bool MLIRGenImpl::preorder(const IR::Type_Header* hdr) {
 bool MLIRGenImpl::preorder(const IR::StructField* field) {
     auto type = toMLIRType(builder, field->type);
     cstring name = field->name;
-    builder.create<p4mlir::FieldDeclOp>(loc(builder, field), llvm::StringRef(name), type);
+    builder.create<p4mlir::MemberDeclOp>(loc(builder, field), llvm::StringRef(name), type);
     return false;
 }
 

@@ -24,7 +24,7 @@ namespace p4mlir {
 bool isPrimitiveType(const IR::Type *type) {
     CHECK_NULL(type);
     return type->is<IR::Type::Bits>() || type->is<IR::Type::Varbits>() ||
-           type->is<IR::Type::Boolean>();
+           type->is<IR::Type::Boolean>() || type->is<IR::Type_StructLike>();
 }
 
 bool GatherOutArgsScalars::preorder(const IR::PathExpression* pe) {

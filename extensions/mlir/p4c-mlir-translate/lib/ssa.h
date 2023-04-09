@@ -141,7 +141,7 @@ class SSAInfo
         decltype(ssaRefIDs) moveRefsInfo() const { return std::move(ssaRefIDs); }
     };
 
-public:
+ public:
     // Calculates SSA form. Determines phi nodes positions and numbers P4 references of SSA values.
     // 'context' is used to take apply parameters of the outter block into account, can be null.
     SSAInfo(const IR::IApply* context, std::pair<const IR::Node*, const BasicBlock*> cfg,
