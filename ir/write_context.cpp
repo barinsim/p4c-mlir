@@ -49,7 +49,7 @@ bool P4WriteContext::isWrite(bool root_value) {
         // MethodCallExpression(Vector<Argument(Expression)>)
         if (!ctxt->parent || !ctxt->parent->parent || !ctxt->parent->parent->node) return false;
         if (auto *mc = ctxt->parent->parent->node->to<IR::MethodCallExpression>()) {
-            auto type = mc->method->type->to<IR::Type_Method>();
+            auto type = mc->method->type->to<IR::Type_MethodBase>();
             if (!type) {
                 /* FIXME -- can't find the type of the method -- should be a BUG? */
                 return true;
