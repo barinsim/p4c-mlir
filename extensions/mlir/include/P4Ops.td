@@ -62,10 +62,15 @@ def CastOp : P4Op<"cast"> {
 }
 
 def Equal: I32EnumAttrCase<"eq", 0>;
+def NotEqual: I32EnumAttrCase<"ne", 1>;
+def LessThan: I32EnumAttrCase<"lt", 3>;
+def LessOrEqual: I32EnumAttrCase<"le", 4>;
+def Greater: I32EnumAttrCase<"gt", 5>;
+def GreaterOrEqual: I32EnumAttrCase<"ge", 6>;
 
 def CompareOpKindAttr: I32EnumAttr<
                         "CompareOpKind", "Determines the kind of comparison done by CompareOp",
-                        [Equal]> {
+                        [Equal, NotEqual, LessThan, LessOrEqual, Greater, GreaterOrEqual]> {
     let cppNamespace = "p4mlir";
     //let stringToSymbolFnName = "ConvertToEnum";
     //let symbolToStringFnName = "ConvertToString";

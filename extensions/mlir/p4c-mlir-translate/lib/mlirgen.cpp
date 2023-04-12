@@ -106,12 +106,32 @@ void MLIRGenImplCFG::postorder(const IR::Cast* cast) {
     addValue(cast, value);
 }
 
-void MLIRGenImplCFG::postorder(const IR::Equ* eq) {
-    auto lhsValue = toValue(eq->left);
-    auto rhsValue = toValue(eq->right);
+void MLIRGenImplCFG::postorder(const IR::Operation_Relation* cmp) {
+    auto lhsValue = toValue(cmp->left);
+    auto rhsValue = toValue(cmp->right);
+
+    auto selectKind = [](const IR::Operation_Relation* cmp) {
+        if (cmp->is<IR::Equ>()) {
+            return CompareOpKind::eq;
+        } else if (cmp->is<IR::Neq>()) {
+            return CompareOpKind::ne;
+        } else if (cmp->is<IR::Lss>()) {
+            return CompareOpKind::lt;
+        } else if (cmp->is<IR::Leq>()) {
+            return CompareOpKind::le;
+        } else if (cmp->is<IR::Grt>()) {
+            return CompareOpKind::gt;
+        } else if (cmp->is<IR::Geq>()) {
+            return CompareOpKind::ge;
+        }
+        BUG_CHECK(false, "Unknown comparison operator");
+    };
+
+    CompareOpKind kind = selectKind(cmp);
+
     auto res =
-        builder.create<CompareOp>(loc(builder, eq), CompareOpKind::eq, lhsValue, rhsValue);
-    addValue(eq, res);
+        builder.create<CompareOp>(loc(builder, cmp), kind, lhsValue, rhsValue);
+    addValue(cmp, res);
 }
 
 void MLIRGenImplCFG::postorder(const IR::Member* mem) {
