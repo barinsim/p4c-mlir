@@ -168,6 +168,18 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
     BUG_CHECK(callOp.getNumResults() == 0, "Not implemented");
 }
 
+void MLIRGenImplCFG::postorder(const IR::Add* add) {
+    handleArithmeticOp<p4mlir::AddOp>(add);
+}
+
+void MLIRGenImplCFG::postorder(const IR::Sub* sub) {
+    handleArithmeticOp<p4mlir::SubOp>(sub);
+}
+
+void MLIRGenImplCFG::postorder(const IR::Mul* mul) {
+    handleArithmeticOp<p4mlir::MulOp>(mul);
+}
+
 bool MLIRGenImplCFG::preorder(const IR::IfStatement* ifStmt) {
     visit(ifStmt->condition);
     mlir::Value cond = toValue(ifStmt->condition);
@@ -222,13 +234,27 @@ mlir::Value MLIRGenImplCFG::toValue(const IR::Node* node) const {
         auto* decl = refMap->getDeclaration(pe->path);
         return toValue(decl, ssaInfo.getID(pe));
     }
-    BUG_CHECK(node->is<IR::Expression>(), "At this point node must be an expression");
-    return exprToValue.at(node->to<IR::Expression>());
+    auto* expr = node->to<IR::Expression>();
+    BUG_CHECK(expr, "At this point, node must be an expression");
+    BUG_CHECK(exprToValue.count(expr), "Could not retrieve value for and expression");
+    return exprToValue.at(expr);
 }
 
 mlir::Block* MLIRGenImplCFG::getMLIRBlock(const BasicBlock* p4block) const {
     BUG_CHECK(blocksMapping.count(p4block), "Could not retrieve corresponding MLIR block");
     return blocksMapping.at(p4block);
+}
+
+template <typename OpType>
+void MLIRGenImplCFG::handleArithmeticOp(const IR::Operation_Binary* arithOp) {
+    // Check that 'OpType' has 'SameOperandsAndResultType' trait
+    static_assert(OpType::template hasTrait<::mlir::OpTrait::SameOperandsAndResultType>());
+
+    mlir::Value lValue = toValue(arithOp->left);
+    mlir::Value rValue = toValue(arithOp->right);
+
+    auto val = builder.create<OpType>(loc(builder, arithOp), lValue, rValue);
+    addValue(arithOp, val);
 }
 
 bool MLIRGenImpl::preorder(const IR::P4Control* control) {

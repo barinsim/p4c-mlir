@@ -98,9 +98,10 @@ def MemberDeclOp : P4Op<"member_decl", [Symbol, HasParent<"HeaderOp">]> {
     let assemblyFormat = "attr-dict $sym_name `:` $type";
 }
 
+// TODO: move to separate types file
 class P4Dialect_Type<string name, string typeMnemonic, list<Trait> traits = []>
     : TypeDef<P4Dialect, name, traits> {
-  let mnemonic = typeMnemonic;
+    let mnemonic = typeMnemonic;
 }
 
 def HeaderType : P4Dialect_Type<"Header", "header"> {
@@ -120,5 +121,17 @@ def CallOp : P4Op<"call", [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
     let results = (outs Variadic<AnyType>);
     let assemblyFormat = "$callee `(` $operands `)` attr-dict `:` functional-type($operands, results)";
 }
+
+class ArithmeticOperator<string mnemonic, list<Trait> traits = []>
+    : P4Op<mnemonic,
+           !listconcat([Pure, SameOperandsAndResultType], traits)> {
+    let arguments = (ins Builtin_Integer:$lhs, Builtin_Integer:$rhs);
+    let results = (outs Builtin_Integer:$result);
+    let assemblyFormat = "attr-dict `(` operands `)` `:` `(` type($lhs) `,` type($rhs) `)` `->` type($result)";
+}
+
+def AddOp : ArithmeticOperator<"add"> {}
+def SubOp : ArithmeticOperator<"sub"> {}
+def MulOp : ArithmeticOperator<"mul"> {}
 
 #endif // STANDALONE_OPS

@@ -132,6 +132,11 @@ class MLIRGenImplCFG : public Inspector
     void postorder(const IR::Member* eq) override;
     void postorder(const IR::MethodCallExpression* call) override;
 
+    // --- Arithmetic Operators ---
+    void postorder(const IR::Add* add) override;
+    void postorder(const IR::Sub* sub) override;
+    void postorder(const IR::Mul* mul) override;
+
     // --- Terminators ---
     void postorder(const IR::ReturnStatement* ret) override;
     bool preorder(const IR::IfStatement* ifStmt) override;
@@ -152,6 +157,11 @@ class MLIRGenImplCFG : public Inspector
 
     // Returns MLIR counterpart of the P4 BasicBlock
     mlir::Block* getMLIRBlock(const BasicBlock* p4block) const;
+
+    // Inserts 'OpType' operation using operands of 'arithOp'.
+    // 'OpType' must have 'SameOperandsAndResultType' trait
+    template <typename OpType>
+    void handleArithmeticOp(const IR::Operation_Binary* arithOp);
 
 };
 
