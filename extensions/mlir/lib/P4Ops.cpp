@@ -97,4 +97,32 @@ mlir::ParseResult ControlOp::parse(mlir::OpAsmParser &parser, mlir::OperationSta
     return mlir::failure();
 }
 
+mlir::LogicalResult CallOp::verifySymbolUses(::mlir::SymbolTableCollection& symbolTable) {
+    // Verify that the callee symbol is in scope
+    auto callee = getCalleeAttr();
+    // TODO: Add more callable ops
+    ActionOp act = symbolTable.lookupNearestSymbolFrom<ActionOp>(*this, callee);
+    if (!act) {
+        return emitOpError() << "'" << callee.getValue()
+                             << "' does not reference a valid callable";
+    }
+
+    // Verify that the operand types match the callee
+    mlir::TypeRange args = getOperands().getTypes();
+    mlir::TypeRange params = act.getBody().getArgumentTypes();
+    if (args.size() != params.size()) {
+        return emitOpError("incorrect number of operands for callee");
+    }
+    if (args != params) {
+        return emitOpError("argument types do not match the parameter types");
+    }
+
+    // Verify that the result types match the callee
+    if (!getResults().empty()) {
+        return emitOpError("Not implemented");
+    }
+
+    return mlir::success();
+}
+
 } // namespace p4mlir

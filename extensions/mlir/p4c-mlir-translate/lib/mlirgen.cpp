@@ -123,6 +123,31 @@ void MLIRGenImplCFG::postorder(const IR::Member* mem) {
     addValue(mem, val);
 }
 
+void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
+    // Resolve name of the callable
+    CHECK_NULL(call->method);
+    BUG_CHECK(call->method->is<IR::PathExpression>(), "Not implemented");
+    auto* expr = call->method->to<IR::PathExpression>();
+    CHECK_NULL(expr->path);
+    auto* decl = refMap->getDeclaration(expr->path);
+    llvm::StringRef name(decl->getName().toString().c_str());
+
+    // Get result MLIR type
+    mlir::TypeRange results = {};
+
+    // Resolve call arguments to MLIR values
+    std::vector<mlir::Value> operands;
+    auto* args = call->arguments;
+    std::transform(args->begin(), args->end(), std::back_inserter(operands),
+                   [&](const IR::Argument *arg) { return toValue(arg->expression); });
+
+    // Insert the call operation
+    auto callOp =
+        builder.create<p4mlir::CallOp>(loc(builder, call), results, name, operands);
+
+    BUG_CHECK(callOp.getNumResults() == 0, "Not implemented");
+}
+
 bool MLIRGenImplCFG::preorder(const IR::IfStatement* ifStmt) {
     visit(ifStmt->condition);
     mlir::Value cond = toValue(ifStmt->condition);

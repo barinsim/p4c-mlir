@@ -103,9 +103,17 @@ def HeaderType : P4Dialect_Type<"Header", "header"> {
     let assemblyFormat = "`<` $name `>`";
 }
 
+// TODO: the 'member_name' should be a symbol not string
 def GetMemberOp : P4Op<"get_member"> {
     let arguments = (ins HeaderType:$base, Builtin_StringAttr:$member_name);
     let results = (outs AnyType:$result);
     let assemblyFormat = "attr-dict `(` $base `)` $member_name `:` qualified(type($base)) `->` type($result)";
 }
+
+def CallOp : P4Op<"call", [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+    let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands);
+    let results = (outs Variadic<AnyType>);
+    let assemblyFormat = "$callee `(` $operands `)` attr-dict `:` functional-type($operands, results)";
+}
+
 #endif // STANDALONE_OPS

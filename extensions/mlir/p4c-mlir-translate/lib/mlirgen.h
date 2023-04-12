@@ -125,14 +125,15 @@ class MLIRGenImplCFG : public Inspector
 
     void postorder(const IR::BoolLiteral* boolean) override;
     void postorder(const IR::Constant* cst) override;
-    void postorder(const IR::ReturnStatement* ret) override;
     void postorder(const IR::AssignmentStatement* assign) override;
     void postorder(const IR::Declaration_Variable* decl) override;
     void postorder(const IR::Cast* cast) override;
     void postorder(const IR::Equ* eq) override;
     void postorder(const IR::Member* eq) override;
+    void postorder(const IR::MethodCallExpression* call) override;
 
     // --- Terminators ---
+    void postorder(const IR::ReturnStatement* ret) override;
     bool preorder(const IR::IfStatement* ifStmt) override;
 
  private:
