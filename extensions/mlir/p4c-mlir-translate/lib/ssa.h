@@ -28,34 +28,63 @@ namespace p4mlir {
 
 bool isPrimitiveType(const IR::Type *type);
 
-
-class GatherOutArgsScalars : public Inspector, P4WriteContext
+// Assigns either REG or STACK allocation to all referenced variables.
+// The allocation depends on the type and context of the reference.
+// If applied multiple times existing REG allocations can be overwritten by STACK,
+// but not vice versa. All references of REG variables will be later assigned SSA number
+class AllocateVariables : public Inspector, P4WriteContext
 {
-    class Builder {
-        ordered_set<const IR::IDeclaration*> decls;
-     public:
-        void add(const IR::IDeclaration* decl) { decls.insert(decl); }
-        ordered_set<const IR::IDeclaration*> get() const { return decls; }
-    };
+    // Gathers all referenced variables which need an allocation.
+    class GatherAllReferencedVariables : public Inspector
+    {
+        const P4::ReferenceMap* refMap;
+        const P4::TypeMap* typeMap;
 
-    Builder b;
+        // Declarations of all referenced variables
+        ordered_set<const IR::IDeclaration*> vars;
+
+     public:
+        GatherAllReferencedVariables(const P4::ReferenceMap *refMap_, const P4::TypeMap *typeMap_)
+            : refMap(refMap_), typeMap(typeMap_) {
+            CHECK_NULL(refMap, typeMap);
+        }
+
+        ordered_set<const IR::IDeclaration*> getReferencedVars() const { return vars; }
+
+     private:
+        bool preorder(const IR::Declaration* decl) override;
+        bool preorder(const IR::PathExpression* pe) override;
+    };
 
     const P4::ReferenceMap* refMap;
     const P4::TypeMap* typeMap;
 
+    // Assigned allocation.
+    // Contains allocation for all referenced variables
+    enum class AllocType { REG, STACK };
+    ordered_map<const IR::IDeclaration*, AllocType> allocation;
+
  public:
-    GatherOutArgsScalars(const P4::ReferenceMap *refMap_, const P4::TypeMap *typeMap_)
+    AllocateVariables(const P4::ReferenceMap *refMap_, const P4::TypeMap *typeMap_)
         : refMap(refMap_), typeMap(typeMap_) {
-        CHECK_NULL(refMap_);
-        CHECK_NULL(typeMap_);
+        CHECK_NULL(refMap, typeMap);
     }
 
-    ordered_set<const IR::IDeclaration*> get() const { return b.get(); }
+    // Gets all variables with REG allocation
+    ordered_set<const IR::IDeclaration*> getRegVariables() const;
+
+    // True if 'decl' has REG allocation
+    bool isRegVariable(const IR::IDeclaration* decl) const;
 
  private:
+    profile_t init_apply(const IR::Node* node) override;
+    bool preorder(const IR::Parameter* param) override;
     bool preorder(const IR::PathExpression* pe) override;
-};
 
+ private:
+    // Assigns STACK allocation to 'decl'
+    void allocateToStack(const IR::IDeclaration* decl);
+};
 
 struct RefInfo {
     std::variant<const IR::IDeclaration*, const IR::PathExpression*> ref;
@@ -63,7 +92,9 @@ struct RefInfo {
     const IR::IDeclaration* decl;
 };
 
-
+// This pass is meant to be applied on a single statement.
+// Given REG variables from 'AllocateVariables' pass, it determines
+// which REG variables are written and which are read within the statement
 class GatherSSAReferences : public Inspector, P4WriteContext
 {
     class Builder {
@@ -82,13 +113,14 @@ class GatherSSAReferences : public Inspector, P4WriteContext
     const P4::TypeMap* typeMap;
     const P4::ReferenceMap* refMap;
 
-    // Output of GatherOutArgsScalars
-    const ordered_set<const IR::IDeclaration*> forbidden;
+    // Output of 'AllocateVariables' pass.
+    // Other than these variables are ignored by this pass
+    ordered_set<const IR::IDeclaration*> ssaVariables;
 
 public:
    GatherSSAReferences(const P4::TypeMap *typeMap_, const P4::ReferenceMap *refMap_,
-                       ordered_set<const IR::IDeclaration *> forbidden_)
-       : typeMap(typeMap_), refMap(refMap_), forbidden(std::move(forbidden_)) {}
+                       ordered_set<const IR::IDeclaration *> ssaVariables_)
+       : typeMap(typeMap_), refMap(refMap_), ssaVariables(std::move(ssaVariables_)) {}
 
    std::vector<RefInfo> getReads() const { return b.getReads(); }
    std::vector<RefInfo> getWrites() const { return b.getWrites(); }
@@ -100,7 +132,9 @@ private:
     bool preorder(const IR::SwitchStatement* switchStmt) override;
 };
 
-
+// Given P4 action or apply method, performs SSA conversion algorithm.
+// Determines which values are placed into SSA registers and which onto a stack.
+// Stores the result of the conversion, i.e. phi nodes placement and numbering of ssa values.
 class SSAInfo
 {
  public:
@@ -143,7 +177,7 @@ class SSAInfo
 
  public:
     // Calculates SSA form. Determines phi nodes positions and numbers P4 references of SSA values.
-    // 'context' is used to take apply parameters of the outter block into account, can be null.
+    // 'context' is used to take apply parameters of the outer block into account, can be null.
     SSAInfo(const IR::IApply* context, std::pair<const IR::Node*, const BasicBlock*> cfg,
             const P4::ReferenceMap* refMap, const P4::TypeMap* typeMap);
 

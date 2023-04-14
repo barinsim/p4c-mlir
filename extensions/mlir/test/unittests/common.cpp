@@ -38,5 +38,4 @@ p4mlir::BasicBlock* getByStmtString(p4mlir::BasicBlock* entry, const std::string
     return bbs.front();
 }
 
-
 } // p4mlir::tests

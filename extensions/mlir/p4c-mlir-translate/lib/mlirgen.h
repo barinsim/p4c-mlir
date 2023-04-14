@@ -44,6 +44,9 @@ mlir::Location loc(mlir::OpBuilder& builder, const IR::Node* node);
 // Converts P4 type into corresponding MLIR type
 mlir::Type toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type);
 
+// Turns MLIR type T into MLIR type `!p4.ref<T>`
+mlir::Type wrappedIntoRef(mlir::OpBuilder& builder, mlir::Type type);
+
 // Creates block arguments for jump from 'bb' to 'succ'.
 // The order of arguments corresponds to phi arguments stored within 'ssaInfo'.
 // 'ssaInfo' should be also used to create block parameters to match the order

@@ -27,16 +27,90 @@ bool isPrimitiveType(const IR::Type *type) {
            type->is<IR::Type::Boolean>() || type->is<IR::Type_StructLike>();
 }
 
-bool GatherOutArgsScalars::preorder(const IR::PathExpression* pe) {
-    if (!isWrite() || !findContext<IR::Argument>()) {
+bool AllocateVariables::GatherAllReferencedVariables::preorder(const IR::Declaration* decl) {
+    auto* type = typeMap->getType(decl, true);
+    if (!isPrimitiveType(type)) {
         return true;
     }
-    auto* type = typeMap->getType(pe);
-    if (isPrimitiveType(type)) {
-        CHECK_NULL(pe);
-        b.add(refMap->getDeclaration(pe->path));
-    }
+    vars.insert(decl);
     return true;
+}
+
+bool AllocateVariables::GatherAllReferencedVariables::preorder(const IR::PathExpression* pe) {
+    auto* type = typeMap->getType(pe, true);
+    if (!isPrimitiveType(type)) {
+        return true;
+    }
+    CHECK_NULL(pe->path);
+    auto* decl = refMap->getDeclaration(pe->path, true);
+    vars.insert(decl);
+    return true;
+}
+
+ordered_set<const IR::IDeclaration*> AllocateVariables::getRegVariables() const {
+    ordered_set<const IR::IDeclaration*> rv;
+    std::for_each(allocation.begin(), allocation.end(), [&](auto& kv) {
+        auto& [decl, allocType] = kv;
+        if (allocType == AllocType::REG) {
+            rv.insert(decl);
+        }
+    });
+    return rv;
+}
+
+bool AllocateVariables::isRegVariable(const IR::IDeclaration* decl) const {
+    BUG_CHECK(allocation.count(decl), "Querying unreferenced variable");
+    return allocation.at(decl) == AllocType::REG;
+}
+
+Visitor::profile_t AllocateVariables::init_apply(const IR::Node* node) {
+    // Gather all referenced variables and by default allocate them into SSA registers
+    GatherAllReferencedVariables gather(refMap, typeMap);
+    node->apply(gather);
+    auto referencedVars = gather.getReferencedVars();
+
+    std::for_each(referencedVars.begin(), referencedVars.end(), [&](auto* decl) {
+        // Skip already allocated variables from previous 'apply()' calls
+        if (allocation.count(decl)) {
+            return;
+        }
+        allocation.insert({decl, AllocType::REG});
+    });
+
+    return Inspector::init_apply(node);
+}
+
+bool AllocateVariables::preorder(const IR::Parameter* param) {
+    // Allocate `out` and `inout` parameters onto STACK.
+    // This aligns with allocation of variables used as arguments at call sites
+    if (param->direction == IR::Direction::InOut || param->direction == IR::Direction::Out) {
+        allocateToStack(param);
+    }
+    return false;
+}
+
+bool AllocateVariables::preorder(const IR::PathExpression* pe) {
+    auto* type = typeMap->getType(pe, true);
+    if (!isPrimitiveType(type)) {
+        return true;
+    }
+    CHECK_NULL(pe->path);
+    auto* decl = refMap->getDeclaration(pe->path, true);
+
+    // Variables used as an out or inout arguments must be STACK allocated.
+    // This aligns with parameter allocations
+    if (findContext<IR::Argument>() && isWrite()) {
+        allocateToStack(decl);
+    }
+
+    // TODO: written structs_likes
+
+    return true;
+}
+
+void AllocateVariables::allocateToStack(const IR::IDeclaration* decl) {
+    BUG_CHECK(allocation.count(decl), "Allocating unreferenced variable");
+    allocation[decl] = AllocType::STACK;
 }
 
 void GatherSSAReferences::Builder::addRead(const IR::PathExpression *pe,
@@ -62,8 +136,8 @@ bool GatherSSAReferences::preorder(const IR::PathExpression *pe) {
         return true;
     }
     CHECK_NULL(pe->path);
-    auto* decl = refMap->getDeclaration(pe->path);
-    if (forbidden.count(decl)) {
+    auto* decl = refMap->getDeclaration(pe->path, true);
+    if (!ssaVariables.count(decl)) {
         return true;
     }
     BUG_CHECK(!(isRead() && isWrite()), "ReadWrite context cannot be expressed as an SSA form");
@@ -77,7 +151,7 @@ bool GatherSSAReferences::preorder(const IR::PathExpression *pe) {
 }
 
 bool GatherSSAReferences::preorder(const IR::Declaration* decl) {
-    if (!forbidden.count(decl)) {
+    if (ssaVariables.count(decl)) {
         b.addWrite(decl);
     }
     return true;
@@ -150,20 +224,20 @@ SSAInfo::SSAInfo(const IR::IApply* context, std::pair<const IR::Node*, const Bas
 
     Builder b;
 
-    // Collect variables that cannot be stored into SSA values
-    GatherOutArgsScalars g(refMap, typeMap);
-    decl->apply(g);
+    // Allocate variables either into SSA reg or onto a stack
+    AllocateVariables alloc(refMap, typeMap);
+    decl->apply(alloc);
     if (context) {
-        context->getApplyParameters()->apply(g);
+        context->getApplyParameters()->apply(alloc);
     }
-    auto forbidden = g.get();
+    auto ssaVars = alloc.getRegVariables();
 
     // For each variable collect blocks where it is written
     auto collectWrites = [&]() {
         ordered_map<const IR::IDeclaration*, ordered_set<const BasicBlock*>> rv;
         CFGWalker::forEachBlock(entry, [&](auto* bb) {
             for (auto* stmt : bb->components) {
-                GatherSSAReferences refs(typeMap, refMap, forbidden);
+                GatherSSAReferences refs(typeMap, refMap, ssaVars);
                 stmt->apply(refs);
                 auto writes = refs.getWrites();
                 std::for_each(writes.begin(), writes.end(), [&](auto& w) {
@@ -213,11 +287,13 @@ SSAInfo::SSAInfo(const IR::IApply* context, std::pair<const IR::Node*, const Bas
     auto createActionParameters = [&]() {
         auto* action = decl->to<IR::P4Action>();
         BUG_CHECK(action, "Parameters can be added only for P4 actions");
-        GatherSSAReferences refs(typeMap, refMap, forbidden);
-        action->parameters->apply(refs);
-        auto writes = refs.getWrites();
-        std::for_each(writes.begin(), writes.end(), [&](auto& w) {
-            b.addPhi(entry, w.decl);
+        // Add both reg and stack variables
+        auto* params = action->getParameters()->getDeclarations();
+        std::for_each(params->begin(), params->end(), [&](auto* decl) {
+            b.addPhi(entry, decl);
+            if (alloc.isRegVariable(decl)) {
+                b.numberRef((ID)0, decl);
+            }
         });
     };
 
@@ -233,12 +309,12 @@ SSAInfo::SSAInfo(const IR::IApply* context, std::pair<const IR::Node*, const Bas
                 b.numberRef((ID)0, param);
             });
         }
-        rename(entry, b, nextIDs, stkIDs, domTree, typeMap, refMap, forbidden);
+        rename(entry, b, nextIDs, stkIDs, domTree, typeMap, refMap, ssaVars);
     };
 
-    auto declToBlocks = collectWrites();
-    for (auto& [decl, blocks] : declToBlocks) {
-        createPhiNodes(decl, blocks);
+    auto varToBlocks = collectWrites();
+    for (auto& [var, blocks] : varToBlocks) {
+        createPhiNodes(var, blocks);
     }
     if (decl->is<IR::P4Action>()) {
         createActionParameters();
@@ -254,7 +330,7 @@ void SSAInfo::rename(const BasicBlock *block, Builder &b,
                      ordered_map<const IR::IDeclaration *, std::stack<ID>> &stkIDs,
                      const DomTree *domTree, const P4::TypeMap *typeMap,
                      const P4::ReferenceMap *refMap,
-                     const ordered_set<const IR::IDeclaration *> &forbidden) const {
+                     const ordered_set<const IR::IDeclaration *>& ssaVars) const {
     // This is used to pop the correct number of elements from 'stkIDs'
     // once we are getting out of the recursion
     ordered_map<const IR::IDeclaration*, int> IDsAdded;
@@ -267,7 +343,7 @@ void SSAInfo::rename(const BasicBlock *block, Builder &b,
         ++nextIDs[var];
     }
     for (auto* stmt : block->components) {
-        GatherSSAReferences refs(typeMap, refMap, forbidden);
+        GatherSSAReferences refs(typeMap, refMap, ssaVars);
         stmt->apply(refs);
         for (RefInfo& read : refs.getReads()) {
             BUG_CHECK(!stkIDs[read.decl].empty(), "Cannot number SSA use without previous def");
@@ -288,7 +364,7 @@ void SSAInfo::rename(const BasicBlock *block, Builder &b,
         }
     }
     for (auto* child : domTree->children(block)) {
-        rename(child, b, nextIDs, stkIDs, domTree, typeMap, refMap, forbidden);
+        rename(child, b, nextIDs, stkIDs, domTree, typeMap, refMap, ssaVars);
     }
     for (auto[var, cnt] : IDsAdded) {
         auto& stk = stkIDs.at(var);

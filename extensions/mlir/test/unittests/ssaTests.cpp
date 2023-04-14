@@ -91,9 +91,12 @@ TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action_1) {
     EXPECT_TRUE(phi.sources.at(bb2).has_value());
     EXPECT_TRUE(phi.sources.at(bb3).has_value());
 
-    // This relies on a single def/use within a statement
+    // This relies on a single def/use within a statement.
+    // Ignores stack allocated vars
     auto writeOrReadID = [&](const IR::StatOrDecl* stmt, bool reads) {
-        p4mlir::GatherSSAReferences refs(typeMap, refMap, {});
+        GatherStmtSymbols allVars(refMap, [&](auto* ref) { return ssaInfo.isSSARef(ref); });
+        stmt->apply(allVars);
+        p4mlir::GatherSSAReferences refs(typeMap, refMap, allVars.get());
         stmt->apply(refs);
         std::vector<p4mlir::RefInfo> infos;
         if (reads) {
@@ -212,12 +215,12 @@ TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action_2) {
     EXPECT_EQ(names(ssaInfo.getPhiInfo(bb4)), unordered({"x1"}));
 }
 
-TEST_F(SSAInfo, Correctly_detect_SSA_reads_and_writes_considering_out_args) {
+TEST_F(SSAInfo, Correctly_detect_SSA_reads_and_writes_after_allocation) {
     std::string src = P4_SOURCE(R"(
         extern int<16> bar1(inout int<16> x1, in int<16> x2);
         extern int<16> bar2(out int<16> x1);
         extern int<16> bar3(in int<16> x1, in int<16> x2, in int<16> x3);
-        action foo() {
+        action foo(in int<16> f7, inout int<16> f8, out int<16> f9) {
             int<16> f1 = 3;
             int<16> f2 = 3;
             int<16> f3 = 3;
@@ -229,6 +232,9 @@ TEST_F(SSAInfo, Correctly_detect_SSA_reads_and_writes_considering_out_args) {
             bar3(f1, f5, f6);
             f5 = f3 + f1;
             f6 = f3 + f6;
+            f8 = 2;
+            f9 = 1;
+            bar3(f8, f8, f8);
             return;
         }
     )");
@@ -250,17 +256,16 @@ TEST_F(SSAInfo, Correctly_detect_SSA_reads_and_writes_considering_out_args) {
     auto* fooAST = cfg.begin()->first->to<IR::P4Action>();
     ASSERT_TRUE(foo && program && ::errorCount() == 0);
 
-    auto* g = new p4mlir::GatherOutArgsScalars(refMap, typeMap);
-    fooAST->apply(*g);
+    p4mlir::AllocateVariables alloc(refMap, typeMap);
+    fooAST->apply(alloc);
     ASSERT_TRUE(program && ::errorCount() == 0);
+    auto ssaVars = alloc.getRegVariables();
 
     using unordered = std::unordered_set<cstring>;
-    EXPECT_EQ(names(g->get()), unordered({"f1", "f2", "f4"}));
-
-    auto forbidden = g->get();
+    EXPECT_EQ(names(ssaVars), unordered({"f3", "f5", "f6", "f7"}));
 
     auto writes = [&](auto* stmt) {
-        p4mlir::GatherSSAReferences refs(typeMap, refMap, forbidden);
+        p4mlir::GatherSSAReferences refs(typeMap, refMap, ssaVars);
         stmt->apply(refs);
         std::vector<const IR::IDeclaration*> decls;
         auto w = refs.getWrites();
@@ -270,7 +275,7 @@ TEST_F(SSAInfo, Correctly_detect_SSA_reads_and_writes_considering_out_args) {
     };
 
     auto reads = [&](auto* stmt) {
-        p4mlir::GatherSSAReferences refs(typeMap, refMap, forbidden);
+        p4mlir::GatherSSAReferences refs(typeMap, refMap, ssaVars);
         stmt->apply(refs);
         std::vector<const IR::IDeclaration*> decls;
         auto r = refs.getReads();
@@ -329,8 +334,20 @@ TEST_F(SSAInfo, Correctly_detect_SSA_reads_and_writes_considering_out_args) {
     EXPECT_EQ(writes(*stmtIt), unordered({}));
     EXPECT_EQ(reads(*stmtIt), unordered({}));
     stmtIt++;
-    EXPECT_EQ(stmtIt, foo->components.end());
+    // f8 = 2;
+    EXPECT_EQ(writes(*stmtIt), unordered({}));
+    EXPECT_EQ(reads(*stmtIt), unordered({}));
+    stmtIt++;
+    // f9 = 1;
+    EXPECT_EQ(writes(*stmtIt), unordered({}));
+    EXPECT_EQ(reads(*stmtIt), unordered({}));
+    stmtIt++;
+    // bar1(f8, f8, f8);
+    EXPECT_EQ(writes(*stmtIt), unordered({}));
+    EXPECT_EQ(reads(*stmtIt), unordered({}));
+    stmtIt++;
 
+    EXPECT_EQ(stmtIt, foo->components.end());
     ASSERT_TRUE(program && ::errorCount() == 0);
 }
 

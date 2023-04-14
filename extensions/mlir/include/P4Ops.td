@@ -109,6 +109,11 @@ def HeaderType : P4Dialect_Type<"Header", "header"> {
     let assemblyFormat = "`<` $name `>`";
 }
 
+def RefType : P4Dialect_Type<"Ref", "ref"> {
+    let parameters = (ins "mlir::Type":$type);
+    let assemblyFormat = "`<` qualified($type) `>`";
+}
+
 // TODO: the 'member_name' should be a symbol not string
 def GetMemberOp : P4Op<"get_member"> {
     let arguments = (ins HeaderType:$base, Builtin_StringAttr:$member_name);

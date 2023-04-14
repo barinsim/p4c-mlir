@@ -36,6 +36,11 @@ mlir::Type toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) {
     return nullptr;
 }
 
+mlir::Type wrappedIntoRef(mlir::OpBuilder& builder, mlir::Type type) {
+    BUG_CHECK(!type.isa<RefType>(), "Ref type cannot be wrapped into another reference");
+    return p4mlir::RefType::get(builder.getContext(), type);
+}
+
 std::vector<mlir::Value> createBlockArgs(const SSAInfo &ssaInfo, const BasicBlock *bb,
                                          const BasicBlock *succ,
                                          const std::map<SSARefType, mlir::Value> &refMap) {
@@ -61,7 +66,6 @@ void MLIRGenImplCFG::postorder(const IR::BoolLiteral* boolean) {
     mlir::Value val = builder.create<p4mlir::ConstantOp>(loc(builder, boolean), type,
                                                           (int64_t)boolean->value);
     addValue(boolean, val);
-    return;
 }
 
 void MLIRGenImplCFG::postorder(const IR::Constant* cst) {
@@ -331,6 +335,9 @@ void MLIRGenImpl::genMLIRFromCFG(const IR::Node* decl, mlir::Region& targetRegio
         for (auto& [decl, phi] : phiInfo) {
             auto loc = builder.getUnknownLoc();
             auto type = toMLIRType(builder, typeMap->getType(decl->to<IR::Declaration>()));
+            if (!ssaInfo.isSSARef(decl)) {
+                type = wrappedIntoRef(builder, type);
+            }
             mlir::BlockArgument arg = block->addArgument(type, loc);
             // Bind the arg
             auto id = phi.destination.value();
@@ -340,7 +347,7 @@ void MLIRGenImpl::genMLIRFromCFG(const IR::Node* decl, mlir::Region& targetRegio
         }
     });
 
-    // Add mapping of the outter apply parameters, so that references of these parameters can be
+    // Add mapping of the outer apply parameters, so that references of these parameters can be
     // resolved. These MLIR parameters must already be created
     if (context) {
         mlir::Region* parent = targetRegion.getParentRegion();
@@ -360,7 +367,7 @@ void MLIRGenImpl::genMLIRFromCFG(const IR::Node* decl, mlir::Region& targetRegio
     // Fill the MLIR Blocks with Ops
     MLIRGenImplCFG cfgGen(builder, mapping, typeMap, refMap, ssaInfo, ssaRefMap);
     CFGWalker::preorder(entry, [&](BasicBlock* bb) {
-        BUG_CHECK(mapping.count(bb), "Could not retrive MLIR block");
+        BUG_CHECK(mapping.count(bb), "Could not retrieve MLIR block");
         auto* block = mapping.at(bb);
         builder.setInsertionPointToStart(block);
         auto& comps = bb->components;
