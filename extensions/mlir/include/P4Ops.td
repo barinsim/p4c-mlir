@@ -98,6 +98,19 @@ def MemberDeclOp : P4Op<"member_decl", [Symbol, HasParent<"HeaderOp">]> {
     let assemblyFormat = "attr-dict $sym_name `:` $type";
 }
 
+class ArithmeticOperator<string mnemonic, list<Trait> traits = []>
+    : P4Op<mnemonic,
+           !listconcat([Pure, SameOperandsAndResultType], traits)> {
+    let arguments = (ins Builtin_Integer:$lhs, Builtin_Integer:$rhs);
+    let results = (outs Builtin_Integer:$result);
+    let assemblyFormat = "attr-dict `(` operands `)` `:` `(` type($lhs) `,` type($rhs) `)` `->` type($result)";
+}
+
+def AddOp : ArithmeticOperator<"add"> {}
+def SubOp : ArithmeticOperator<"sub"> {}
+def MulOp : ArithmeticOperator<"mul"> {}
+
+
 // TODO: move to separate types file
 class P4Dialect_Type<string name, string typeMnemonic, list<Trait> traits = []>
     : TypeDef<P4Dialect, name, traits> {
@@ -114,6 +127,19 @@ def RefType : P4Dialect_Type<"Ref", "ref"> {
     let assemblyFormat = "`<` qualified($type) `>`";
 }
 
+def LoadOp : P4Op<"load"> {
+    let arguments = (ins RefType:$addr);
+    // TODO: verify result is of type pointed by $addr
+    let results = (outs AnyType:$result);
+    let assemblyFormat = "attr-dict `(` $addr `)` `:` qualified(type($addr)) `->` qualified(type($result))";
+}
+
+def StoreOp : P4Op<"store"> {
+    let arguments = (ins RefType:$addr, AnyType:$value);
+    // TODO: verify result is of type pointed by $addr
+    let assemblyFormat = "attr-dict `(` operands `)` `:` `(` type(operands) `)` `->` `(` `)` ";
+}
+
 // TODO: the 'member_name' should be a symbol not string
 def GetMemberOp : P4Op<"get_member"> {
     let arguments = (ins HeaderType:$base, Builtin_StringAttr:$member_name);
@@ -127,16 +153,5 @@ def CallOp : P4Op<"call", [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
     let assemblyFormat = "$callee `(` $operands `)` attr-dict `:` functional-type($operands, results)";
 }
 
-class ArithmeticOperator<string mnemonic, list<Trait> traits = []>
-    : P4Op<mnemonic,
-           !listconcat([Pure, SameOperandsAndResultType], traits)> {
-    let arguments = (ins Builtin_Integer:$lhs, Builtin_Integer:$rhs);
-    let results = (outs Builtin_Integer:$result);
-    let assemblyFormat = "attr-dict `(` operands `)` `:` `(` type($lhs) `,` type($rhs) `)` `->` type($result)";
-}
-
-def AddOp : ArithmeticOperator<"add"> {}
-def SubOp : ArithmeticOperator<"sub"> {}
-def MulOp : ArithmeticOperator<"mul"> {}
 
 #endif // STANDALONE_OPS

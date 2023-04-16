@@ -82,12 +82,21 @@ void MLIRGenImplCFG::postorder(const IR::ReturnStatement* ret) {
 }
 
 void MLIRGenImplCFG::postorder(const IR::AssignmentStatement* assign) {
-    // TODO: writes through pointer
     BUG_CHECK(assign->left->is<IR::PathExpression>(), "Not implemented");
-
+    auto* pe = assign->left->to<IR::PathExpression>();
     auto rValue = toValue(assign->right);
-    mlir::Value value = builder.create<p4mlir::CopyOp>(loc(builder, assign), rValue);
-    addValue(assign->left, value);
+
+    // Write to an SSA register allocated variable
+    if (ssaInfo.isSSARef(pe)) {
+        mlir::Value value = builder.create<p4mlir::CopyOp>(loc(builder, assign), rValue);
+        addValue(assign->left, value);
+        return;
+    }
+
+    // Write to a stack allocated variable
+    mlir::Value addr = toValue(pe);
+    BUG_CHECK(addr.getType().isa<p4mlir::RefType>(), "Stack allocated variable without an address");
+    builder.create<p4mlir::StoreOp>(loc(builder, assign), addr, rValue);
 }
 
 void MLIRGenImplCFG::postorder(const IR::Declaration_Variable* decl) {
@@ -172,6 +181,31 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
     BUG_CHECK(callOp.getNumResults() == 0, "Not implemented");
 }
 
+void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
+    // References of SSA values do not generate any operations
+    auto* type = typeMap->getType(pe, true);
+    if (ssaInfo.isSSARef(pe) || !isPrimitiveType(type)) {
+        return;
+    }
+
+    // Get the value containing the reference of the stack allocated variable
+    CHECK_NULL(pe->path);
+    auto* decl = refMap->getDeclaration(pe->path);
+    mlir::Value addr = toValue(decl);
+    BUG_CHECK(addr.getType().isa<p4mlir::RefType>(), "Stack allocated variable without address");
+    auto refType = addr.getType().cast<p4mlir::RefType>();
+
+    // Do not materialize the value if it will be written
+    if (isWrite()) {
+        addValue(pe, addr);
+        return;
+    }
+
+    // Materialize the value in a read context
+    auto val = builder.create<p4mlir::LoadOp>(loc(builder, pe), refType.getType(), addr);
+    addValue(pe, val);
+}
+
 void MLIRGenImplCFG::postorder(const IR::Add* add) {
     handleArithmeticOp<p4mlir::AddOp>(add);
 }
@@ -198,7 +232,7 @@ bool MLIRGenImplCFG::preorder(const IR::IfStatement* ifStmt) {
     return false;
 }
 
-void MLIRGenImplCFG::addValue(const IR::Node* node, mlir::Value value) {
+void MLIRGenImplCFG::addValue(const IR::INode* node, mlir::Value value) {
     // Check if 'node' represents SSA value write,
     // through IR::PathExpression or IR::IDeclaration.
     // These must be stored separately to be able to resolve
@@ -228,7 +262,7 @@ mlir::Value MLIRGenImplCFG::toValue(const IR::IDeclaration* decl, SSAInfo::ID id
     return ssaRefToValue.at(ref);
 }
 
-mlir::Value MLIRGenImplCFG::toValue(const IR::Node* node) const {
+mlir::Value MLIRGenImplCFG::toValue(const IR::INode* node) const {
     // SSA value reference is handled differently.
     // The mlir::Value is not connected directly to the
     // AST node, rather to unique {decl, SSA id} pair
@@ -237,6 +271,11 @@ mlir::Value MLIRGenImplCFG::toValue(const IR::Node* node) const {
         CHECK_NULL(pe->path);
         auto* decl = refMap->getDeclaration(pe->path);
         return toValue(decl, ssaInfo.getID(pe));
+    }
+    auto* decl = node->to<IR::IDeclaration>();
+    if (decl) {
+        // TODO: fix this
+        return toValue(decl, 0);
     }
     auto* expr = node->to<IR::Expression>();
     BUG_CHECK(expr, "At this point, node must be an expression");

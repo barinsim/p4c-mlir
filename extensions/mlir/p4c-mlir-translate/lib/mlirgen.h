@@ -63,7 +63,7 @@ std::vector<mlir::Value> createBlockArgs(const SSAInfo &ssaInfo, const BasicBloc
 // While visiting terminators (e.g. IR::IfStatement) it is made sure
 // that children blocks are not visited.
 // The object of this class is meant to be alive for the whole MLIRgen of the entire CFG
-class MLIRGenImplCFG : public Inspector
+class MLIRGenImplCFG : public Inspector, P4WriteContext
 {
     mlir::OpBuilder& builder;
 
@@ -134,6 +134,7 @@ class MLIRGenImplCFG : public Inspector
     void postorder(const IR::Operation_Relation* cmp) override;
     void postorder(const IR::Member* eq) override;
     void postorder(const IR::MethodCallExpression* call) override;
+    void postorder(const IR::PathExpression* pe) override;
 
     // --- Arithmetic Operators ---
     void postorder(const IR::Add* add) override;
@@ -148,7 +149,7 @@ class MLIRGenImplCFG : public Inspector
     // Creates binding between 'node' and 'value'.
     // These bindings are later queried via 'toValue()' and
     // used to resolve SSA value references and results of expressions
-    void addValue(const IR::Node* node, mlir::Value value);
+    void addValue(const IR::INode* node, mlir::Value value);
 
     // Some SSA value references do not have corresponding AST node.
     // For example references within phi nodes.
@@ -156,7 +157,7 @@ class MLIRGenImplCFG : public Inspector
     mlir::Value toValue(const IR::IDeclaration* decl, SSAInfo::ID id) const;
 
     // Returns value that was previously bound with 'node' via 'addValue()'
-    mlir::Value toValue(const IR::Node* node) const;
+    mlir::Value toValue(const IR::INode* node) const;
 
     // Returns MLIR counterpart of the P4 BasicBlock
     mlir::Block* getMLIRBlock(const BasicBlock* p4block) const;
