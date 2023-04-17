@@ -172,13 +172,84 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
     std::vector<mlir::Value> operands;
     auto* args = call->arguments;
     std::transform(args->begin(), args->end(), std::back_inserter(operands),
-                   [&](const IR::Argument *arg) { return toValue(arg->expression); });
+                   [&](const IR::Argument *arg) { return toValue(arg); });
 
     // Insert the call operation
     auto callOp =
         builder.create<p4mlir::CallOp>(loc(builder, call), results, name, operands);
-
     BUG_CHECK(callOp.getNumResults() == 0, "Not implemented");
+
+    // P4 has copy-in/copy-out semantics for calls.
+    // At this point written stack allocated variables must be copied back into
+    // its original memory
+    std::for_each(args->begin(), args->end(), [&](const IR::Argument* arg) {
+        // Only variables that were passed as p4.ref<T> must be copied back
+        if (!toValue(arg).getType().isa<p4mlir::RefType>()) {
+            return;
+        }
+        mlir::Value tmpAddr = toValue(arg);
+        auto type = tmpAddr.getType().cast<p4mlir::RefType>().getType();
+        auto tmpVal = builder.create<p4mlir::LoadOp>(loc(builder, arg), type, tmpAddr);
+        auto addr = toValue(arg->expression);
+        builder.create<p4mlir::StoreOp>(loc(builder, arg), addr, tmpVal);
+    });
+}
+
+void MLIRGenImplCFG::postorder(const IR::Argument* arg) {
+    // P4 has copy-in/copy-out semantics for calls.
+    // Stack allocated variables must be copied into temporaries before a call,
+    // and copied back after. The 'copy back' part is done while visiting
+    // `MethodCallExpression`
+
+    mlir::Value exprValue = toValue(arg->expression);
+
+    // A register allocated value is immutable, no need to copy them into temporaries.
+    // Stack allocated variables passed as read-only arguments are already materialized
+    // at this point
+    if (!exprValue.getType().isa<p4mlir::RefType>()) {
+        addValue(arg, exprValue);
+        return;
+    }
+
+    // Stack allocated variable passed as a writeable argument must be copied into
+    // a temporary stack space first
+    auto refType = exprValue.getType();
+    auto type = refType.cast<p4mlir::RefType>().getType();
+    mlir::Value tmpAddr = builder.create<p4mlir::AllocOp>(loc(builder, arg), refType);
+
+    // Gets the direction of the parameter to which this argument is bound to
+    auto getArgDir = [&]() -> std::optional<IR::Direction> {
+        auto* ctxt = getContext();
+        if (!ctxt) {
+            return std::nullopt;
+        }
+        auto* call = ctxt->parent->node->to<IR::MethodCallExpression>();
+        if (!call) {
+            return std::nullopt;
+        }
+        auto* type = call->method->type->to<IR::Type_MethodBase>();
+        if (!type) {
+            return std::nullopt;
+        }
+        auto* param = type->parameters->getParameter(ctxt->child_index);
+        if (!param) {
+            return std::nullopt;
+        }
+        return param->direction;
+    };
+
+    // Initialize the allocated stack space.
+    // Only inout stack arguments must be initialized
+    auto dir = getArgDir();
+    BUG_CHECK(dir.has_value(), "Could not retrieve argument direction");
+    BUG_CHECK(dir == IR::Direction::InOut || dir == IR::Direction::Out,
+              "At this point, read-only arguments must be already handled");
+    if (dir == IR::Direction::InOut) {
+        mlir::Value tmpVal = builder.create<p4mlir::LoadOp>(loc(builder, arg), type, exprValue);
+        builder.create<p4mlir::StoreOp>(loc(builder, arg), tmpAddr, tmpVal);
+    }
+
+    addValue(arg, tmpAddr);
 }
 
 void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
@@ -251,9 +322,7 @@ void MLIRGenImplCFG::addValue(const IR::INode* node, mlir::Value value) {
         ssaRefToValue.insert({ref, value});
         return;
     }
-    BUG_CHECK(node->is<IR::Expression>(),
-              "Value can be associated only with an expression at this point");
-    exprToValue.insert({node->to<IR::Expression>(), value});
+    nodeToValue.insert({node, value});
 }
 
 mlir::Value MLIRGenImplCFG::toValue(const IR::IDeclaration* decl, SSAInfo::ID id) const {
@@ -277,10 +346,7 @@ mlir::Value MLIRGenImplCFG::toValue(const IR::INode* node) const {
         // TODO: fix this
         return toValue(decl, 0);
     }
-    auto* expr = node->to<IR::Expression>();
-    BUG_CHECK(expr, "At this point, node must be an expression");
-    BUG_CHECK(exprToValue.count(expr), "Could not retrieve value for and expression");
-    return exprToValue.at(expr);
+    return nodeToValue.at(node);
 }
 
 mlir::Block* MLIRGenImplCFG::getMLIRBlock(const BasicBlock* p4block) const {
@@ -475,8 +541,10 @@ mlirGen(mlir::MLIRContext& context, const IR::P4Program* program) {
         return nullptr;
     }
     if (failed(mlir::verify(moduleOp))) {
-      moduleOp.emitError("module verification error");
-      return nullptr;
+        // Dump for debugging purposes
+        moduleOp->print(llvm::outs());
+        moduleOp.emitError("module verification error");
+        return nullptr;
     }
 
     return moduleOp;

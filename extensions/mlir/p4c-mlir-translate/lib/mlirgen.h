@@ -70,8 +70,8 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
     // Block of the currently visited statement
     BasicBlock* currBlock = nullptr;
 
-    // Mapping of expressions to the MLIR values they produced
-    ordered_map<const IR::Expression*, mlir::Value> exprToValue;
+    // Mapping of nodes to the MLIR values they produced
+    ordered_map<const IR::INode*, mlir::Value> nodeToValue;
 
     // Mapping of P4 SSA values to its MLIR counterparts.
     // Stores both real P4 values and MLIR block parameters
@@ -134,6 +134,7 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
     void postorder(const IR::Operation_Relation* cmp) override;
     void postorder(const IR::Member* eq) override;
     void postorder(const IR::MethodCallExpression* call) override;
+    void postorder(const IR::Argument* arg) override;
     void postorder(const IR::PathExpression* pe) override;
 
     // --- Arithmetic Operators ---

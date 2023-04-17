@@ -127,6 +127,11 @@ def RefType : P4Dialect_Type<"Ref", "ref"> {
     let assemblyFormat = "`<` qualified($type) `>`";
 }
 
+def AllocOp : P4Op<"alloc"> {
+    let results = (outs RefType:$result);
+    let assemblyFormat = "attr-dict `:` qualified(type($result)) ";
+}
+
 def LoadOp : P4Op<"load"> {
     let arguments = (ins RefType:$addr);
     // TODO: verify result is of type pointed by $addr
@@ -137,7 +142,7 @@ def LoadOp : P4Op<"load"> {
 def StoreOp : P4Op<"store"> {
     let arguments = (ins RefType:$addr, AnyType:$value);
     // TODO: verify result is of type pointed by $addr
-    let assemblyFormat = "attr-dict `(` operands `)` `:` `(` type(operands) `)` `->` `(` `)` ";
+    let assemblyFormat = "attr-dict `(` operands `)` `:` `(` qualified(type(operands)) `)` `->` `(` `)` ";
 }
 
 // TODO: the 'member_name' should be a symbol not string
