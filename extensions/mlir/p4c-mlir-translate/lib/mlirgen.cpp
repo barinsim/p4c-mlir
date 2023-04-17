@@ -100,15 +100,35 @@ void MLIRGenImplCFG::postorder(const IR::AssignmentStatement* assign) {
 }
 
 void MLIRGenImplCFG::postorder(const IR::Declaration_Variable* decl) {
-    if (!decl->initializer) {
-        auto type = toMLIRType(builder, typeMap->getType(decl));
-        mlir::Value value = builder.create<p4mlir::UninitializedOp>(loc(builder, decl), type);
+    // Retrieves or creates init value
+    auto createInitValue = [&](auto* decl) -> mlir::Value {
+        if (!decl->initializer) {
+            auto type = toMLIRType(builder, typeMap->getType(decl));
+            auto init = builder.create<p4mlir::UninitializedOp>(loc(builder, decl), type);
+            return init;
+        }
+        return toValue(decl->initializer);
+    };
+
+    auto init = createInitValue(decl);
+
+    // No need to allocate space for reg variables
+    if (ssaInfo.isSSARef(decl)) {
+        auto value = init;
+        if (decl->initializer) {
+            auto type = toMLIRType(builder, typeMap->getType(decl));
+            value = builder.create<p4mlir::CopyOp>(loc(builder, decl), type, init);
+        }
         addValue(decl, value);
         return;
     }
-    mlir::Value init = toValue(decl->initializer);
-    mlir::Value value = builder.create<p4mlir::CopyOp>(loc(builder, decl), init);
-    addValue(decl, value);
+
+    // Create space for stack allocated variables
+    auto type = toMLIRType(builder, typeMap->getType(decl));
+    auto refType = wrappedIntoRef(builder, type);
+    mlir::Value addr = builder.create<p4mlir::AllocOp>(loc(builder, decl), refType);
+    builder.create<p4mlir::StoreOp>(loc(builder, decl), addr, init);
+    addValue(decl, addr);
 }
 
 void MLIRGenImplCFG::postorder(const IR::Cast* cast) {
@@ -309,8 +329,8 @@ void MLIRGenImplCFG::addValue(const IR::INode* node, mlir::Value value) {
     // These must be stored separately to be able to resolve
     // references of these values
     auto* decl = node->to<IR::IDeclaration>();
-    if (decl && ssaInfo.isSSARef(decl)) {
-        SSARefType ref{decl, ssaInfo.getID(decl)};
+    if (decl) {
+        SSARefType ref{decl, 0};
         ssaRefToValue.insert({ref, value});
         return;
     }
@@ -343,7 +363,6 @@ mlir::Value MLIRGenImplCFG::toValue(const IR::INode* node) const {
     }
     auto* decl = node->to<IR::IDeclaration>();
     if (decl) {
-        // TODO: fix this
         return toValue(decl, 0);
     }
     return nodeToValue.at(node);
