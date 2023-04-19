@@ -91,22 +91,35 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
     // Stores phi functions and SSA value numbering
     const SSAInfo& ssaInfo;
 
+    // Member variables of the control/parser to which the visited CFG belongs to.
+    // These are gathered before this pass
+    ordered_set<const IR::IDeclaration*> members;
+
     // Internal flag that makes sure this visitor was started properly
     // using custom 'apply' method instead of the usual `node->apply(visitor)`
     bool customApplyCalled = false;
+
+    // Value containing the `self` reference of the parser or control block.
+    // Is used for a member variable access.
+    // Does not have to exist (e.g. action outside a control block)
+    std::optional<mlir::Value> selfValue;
 
  public:
     MLIRGenImplCFG(mlir::OpBuilder &builder_,
                    const ordered_map<const BasicBlock *, mlir::Block *> &blocksMapping_,
                    const P4::TypeMap *typeMap_, const P4::ReferenceMap *refMap_,
                    const SSAInfo& ssaInfo_,
-                   std::map<SSARefType, mlir::Value>& ssaRefToValue_)
+                   std::map<SSARefType, mlir::Value>& ssaRefToValue_,
+                   ordered_set<const IR::IDeclaration*> members_,
+                   std::optional<mlir::Value> selfValue_)
         : builder(builder_),
           blocksMapping(blocksMapping_),
           typeMap(typeMap_),
           refMap(refMap_),
           ssaInfo(ssaInfo_),
-          ssaRefToValue(ssaRefToValue_) {
+          ssaRefToValue(ssaRefToValue_),
+          members(members_),
+          selfValue(selfValue_) {
         CHECK_NULL(typeMap, refMap);
     }
 
@@ -168,6 +181,9 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
     template <typename OpType>
     void handleArithmeticOp(const IR::Operation_Binary* arithOp);
 
+    // Gets the value containing the `self` reference
+    std::optional<mlir::Value> getSelfValue() const;
+
 };
 
 // Visitor converting valid P4 AST into P4 MLIR dialect
@@ -193,6 +209,7 @@ class MLIRGenImpl : public Inspector
     bool preorder(const IR::P4Action* action) override;
     bool preorder(const IR::Type_Header* hdr) override;
     bool preorder(const IR::StructField* field) override;
+    bool preorder(const IR::Declaration_Variable* decl) override;
 
     // Generates MLIR for CFG of 'decl', MLIR blocks are inserted into 'targetRegion'.
     // CFG must be accessible through `cfg['decl']`

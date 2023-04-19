@@ -28,14 +28,15 @@ namespace p4mlir {
 
 bool isPrimitiveType(const IR::Type *type);
 
-// Assigns either REG or STACK allocation to all referenced variables.
+// Assigns either REG or STACK allocation to all referenced allocatable variables.
 // The allocation depends on the type and context of the reference.
 // If applied multiple times existing REG allocations can be overwritten by STACK,
 // but not vice versa. All references of REG variables will be later assigned SSA number
 class AllocateVariables : public Inspector, P4WriteContext
 {
     // Gathers all referenced variables which need an allocation.
-    class GatherAllReferencedVariables : public Inspector
+    // Those are local variables and parameters
+    class GatherAllocatableVariables : public Inspector
     {
         const P4::ReferenceMap* refMap;
         const P4::TypeMap* typeMap;
@@ -44,7 +45,7 @@ class AllocateVariables : public Inspector, P4WriteContext
         ordered_set<const IR::IDeclaration*> vars;
 
      public:
-        GatherAllReferencedVariables(const P4::ReferenceMap *refMap_, const P4::TypeMap *typeMap_)
+        GatherAllocatableVariables(const P4::ReferenceMap *refMap_, const P4::TypeMap *typeMap_)
             : refMap(refMap_), typeMap(typeMap_) {
             CHECK_NULL(refMap, typeMap);
         }
@@ -53,7 +54,6 @@ class AllocateVariables : public Inspector, P4WriteContext
 
      private:
         bool preorder(const IR::Declaration* decl) override;
-        bool preorder(const IR::PathExpression* pe) override;
     };
 
     const P4::ReferenceMap* refMap;

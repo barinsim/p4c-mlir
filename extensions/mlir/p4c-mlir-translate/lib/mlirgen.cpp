@@ -31,6 +31,12 @@ mlir::Type toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) {
         BUG_CHECK(type, "Could not retrieve Header type");
         return type;
     }
+    else if (auto* control = p4type->to<IR::Type_Control>()) {
+        cstring name = control->name;
+        auto type = p4mlir::ControlType::get(builder.getContext(), llvm::StringRef(name.c_str()));
+        BUG_CHECK(type, "Could not retrieve Control type");
+        return type;
+    }
 
     throw std::domain_error("Not implemented");
     return nullptr;
@@ -57,6 +63,31 @@ std::vector<mlir::Value> createBlockArgs(const SSAInfo &ssaInfo, const BasicBloc
     }
     return rv;
 }
+
+// Collects member variables declared within control or parser blocks
+class GatherMemberVariables : public Inspector
+{
+    // Gathered member variables
+    ordered_set<const IR::IDeclaration*> members;
+
+ public:
+    ordered_set<const IR::IDeclaration*> get() const { return members; }
+
+ private:
+    bool preorder(const IR::P4Control* control) override {
+        auto& decls = control->controlLocals;
+        std::for_each(decls.begin(), decls.end(), [&](const IR::IDeclaration* decl) {
+            if (decl->is<IR::Declaration_Variable>()) {
+                members.insert(decl);
+            }
+        });
+        return false;
+    }
+
+    bool preorder(const IR::P4Parser* parser) override {
+        BUG_CHECK(false, "Not implemented");
+    }
+};
 
 } // namespace
 
@@ -279,12 +310,31 @@ void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
         return;
     }
 
-    // Get the value containing the reference of the stack allocated variable
-    CHECK_NULL(pe->path);
-    auto* decl = refMap->getDeclaration(pe->path);
-    mlir::Value addr = toValue(decl);
-    BUG_CHECK(addr.getType().isa<p4mlir::RefType>(), "Stack allocated variable without address");
-    auto refType = addr.getType().cast<p4mlir::RefType>();
+    // Gets the address of a stack local variable or a member variable
+    auto getAddress = [&]() {
+        CHECK_NULL(pe->path);
+        auto* decl = refMap->getDeclaration(pe->path);
+
+        // Member variable address must be loaded through the `self` reference
+        if (members.count(decl)) {
+            std::optional<mlir::Value> self = getSelfValue();
+            BUG_CHECK(self.has_value(),
+                      "Member variable is referenced but the `self` reference does not exist");
+            auto mlirType = toMLIRType(builder, type);
+            auto refType = wrappedIntoRef(builder, mlirType);
+            auto name = builder.getStringAttr(decl->getName().toString().c_str());
+            mlir::Value addr =
+                builder.create<p4mlir::GetMemberRefOp>(loc(builder, pe), refType, *self, name);
+            return addr;
+        }
+
+        // The variable is local and is stack allocated.
+        // Get the value containing the reference
+        return toValue(decl);
+    };
+
+    mlir::Value addr = getAddress();
+    BUG_CHECK(addr.getType().isa<p4mlir::RefType>(), "Address must have `!p4.ref<T>` type");
 
     // Do not materialize the value if it will be written
     if (isWrite()) {
@@ -293,6 +343,7 @@ void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
     }
 
     // Materialize the value in a read context
+    auto refType = addr.getType().cast<p4mlir::RefType>();
     auto val = builder.create<p4mlir::LoadOp>(loc(builder, pe), refType.getType(), addr);
     addValue(pe, val);
 }
@@ -383,6 +434,10 @@ void MLIRGenImplCFG::handleArithmeticOp(const IR::Operation_Binary* arithOp) {
 
     auto val = builder.create<OpType>(loc(builder, arithOp), lValue, rValue);
     addValue(arithOp, val);
+}
+
+std::optional<mlir::Value> MLIRGenImplCFG::getSelfValue() const {
+    return selfValue;
 }
 
 bool MLIRGenImpl::preorder(const IR::P4Control* control) {
@@ -488,12 +543,46 @@ void MLIRGenImpl::genMLIRFromCFG(const IR::Node* decl, mlir::Region& targetRegio
         }
     }
 
+    // Gathers member variables from parser or control block.
+    // Context can be `nullptr` in which case empty set is returned
+    auto gatherMemberVariables = [](const IR::IApply* context) {
+        if (!context) {
+            return ordered_set<const IR::IDeclaration*>();
+        }
+        BUG_CHECK(context->is<IR::P4Parser>() || context->is<IR::P4Control>(),
+                  "Expected parser or control block");
+        GatherMemberVariables gmv;
+        context->to<IR::Node>()->apply(gmv);
+        return gmv.get();
+    };
+
+    auto members = gatherMemberVariables(context);
+
+    // Optionally create `self` value which is used to access member variables
+    std::optional<mlir::Value> selfValue;
+    if (context) {
+        BUG_CHECK(mapping.count(entry), "Could not retrieve entry MLIR block");
+        auto* block = mapping.at(entry);
+        builder.setInsertionPointToStart(block);
+        const IR::Type* p4type = nullptr;
+        if (auto* control = context->to<IR::P4Control>()) {
+            p4type = control->type;
+        }
+        if (auto* parser = context->to<IR::P4Parser>()) {
+            p4type = parser->type;
+        }
+        auto contextType = toMLIRType(builder, p4type);
+        auto refType = wrappedIntoRef(builder, contextType);
+        selfValue = builder.create<p4mlir::SelfOp>(loc(builder, decl), refType);
+    }
+
     // Fill the MLIR Blocks with Ops
-    MLIRGenImplCFG cfgGen(builder, mapping, typeMap, refMap, ssaInfo, ssaRefMap);
+    MLIRGenImplCFG cfgGen(builder, mapping, typeMap, refMap, ssaInfo, ssaRefMap, members,
+                          selfValue);
     CFGWalker::preorder(entry, [&](BasicBlock* bb) {
         BUG_CHECK(mapping.count(bb), "Could not retrieve MLIR block");
         auto* block = mapping.at(bb);
-        builder.setInsertionPointToStart(block);
+        builder.setInsertionPointToEnd(block);
         auto& comps = bb->components;
         std::for_each(comps.begin(), comps.end(), [&](auto* stmt) {
             cfgGen.apply(stmt, bb);
@@ -544,6 +633,16 @@ bool MLIRGenImpl::preorder(const IR::StructField* field) {
     auto type = toMLIRType(builder, field->type);
     cstring name = field->name;
     builder.create<p4mlir::MemberDeclOp>(loc(builder, field), llvm::StringRef(name), type);
+    return false;
+}
+
+bool MLIRGenImpl::preorder(const IR::Declaration_Variable* decl) {
+    if (decl->initializer) {
+        BUG_CHECK(false, "Not implemented");
+    }
+    auto type = toMLIRType(builder, typeMap->getType(decl, true));
+    cstring name = decl->getName();
+    builder.create<p4mlir::MemberDeclOp>(loc(builder, decl), llvm::StringRef(name), type);
     return false;
 }
 

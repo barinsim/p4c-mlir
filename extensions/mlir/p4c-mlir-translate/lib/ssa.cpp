@@ -27,22 +27,11 @@ bool isPrimitiveType(const IR::Type *type) {
            type->is<IR::Type::Boolean>() || type->is<IR::Type_StructLike>();
 }
 
-bool AllocateVariables::GatherAllReferencedVariables::preorder(const IR::Declaration* decl) {
+bool AllocateVariables::GatherAllocatableVariables::preorder(const IR::Declaration* decl) {
     auto* type = typeMap->getType(decl, true);
     if (!isPrimitiveType(type)) {
         return true;
     }
-    vars.insert(decl);
-    return true;
-}
-
-bool AllocateVariables::GatherAllReferencedVariables::preorder(const IR::PathExpression* pe) {
-    auto* type = typeMap->getType(pe, true);
-    if (!isPrimitiveType(type)) {
-        return true;
-    }
-    CHECK_NULL(pe->path);
-    auto* decl = refMap->getDeclaration(pe->path, true);
     vars.insert(decl);
     return true;
 }
@@ -64,8 +53,8 @@ bool AllocateVariables::isRegVariable(const IR::IDeclaration* decl) const {
 }
 
 Visitor::profile_t AllocateVariables::init_apply(const IR::Node* node) {
-    // Gather all referenced variables and by default allocate them into SSA registers
-    GatherAllReferencedVariables gather(refMap, typeMap);
+    // Gather all allocatable variables and by default allocate them into SSA registers
+    GatherAllocatableVariables gather(refMap, typeMap);
     node->apply(gather);
     auto referencedVars = gather.getReferencedVars();
 

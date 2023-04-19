@@ -93,7 +93,7 @@ def HeaderOp : P4Op<"header", [SymbolTable, Symbol, IsolatedFromAbove, NoTermina
     let assemblyFormat = "attr-dict $sym_name $body";
 }
 
-def MemberDeclOp : P4Op<"member_decl", [Symbol, HasParent<"HeaderOp">]> {
+def MemberDeclOp : P4Op<"member_decl", [Symbol]> {
     let arguments = (ins SymbolNameAttr:$sym_name, TypeAttr:$type);
     let assemblyFormat = "attr-dict $sym_name `:` $type";
 }
@@ -119,6 +119,11 @@ class P4Dialect_Type<string name, string typeMnemonic, list<Trait> traits = []>
 
 def HeaderType : P4Dialect_Type<"Header", "header"> {
     let parameters = (ins StringRefParameter<"Header type name">:$name);
+    let assemblyFormat = "`<` $name `>`";
+}
+
+def ControlType : P4Dialect_Type<"Control", "control"> {
+    let parameters = (ins StringRefParameter<"Control type name">:$name);
     let assemblyFormat = "`<` $name `>`";
 }
 
@@ -150,6 +155,19 @@ def GetMemberOp : P4Op<"get_member"> {
     let arguments = (ins HeaderType:$base, Builtin_StringAttr:$member_name);
     let results = (outs AnyType:$result);
     let assemblyFormat = "attr-dict `(` $base `)` $member_name `:` qualified(type($base)) `->` type($result)";
+}
+
+// TODO: the 'member_name' should be a symbol not string
+def GetMemberRefOp : P4Op<"get_member_ref"> {
+    let arguments = (ins RefType:$base, Builtin_StringAttr:$member_name);
+    let results = (outs RefType:$result);
+    let assemblyFormat = "attr-dict `(` $base `)` $member_name `:` qualified(type($base)) `->` qualified(type($result))";
+}
+
+// TODO: must have control/parser parent and be within action/apply/state
+def SelfOp : P4Op<"self"> {
+    let results = (outs RefType:$result);
+    let assemblyFormat = "attr-dict `:`  qualified(type($result))";
 }
 
 def CallOp : P4Op<"call", [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {

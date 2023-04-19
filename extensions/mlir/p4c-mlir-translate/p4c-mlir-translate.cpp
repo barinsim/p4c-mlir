@@ -19,6 +19,7 @@ const IR::P4Program* parseP4(int argc, char** argv) {
     if (!program || ::errorCount() > 0) {
         return nullptr;
     }
+
     return program;
 }
 
