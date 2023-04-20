@@ -26,6 +26,8 @@
 namespace p4mlir {
 
 
+// Returns true if variables of type 'type' need allocation
+// TODO: rename this
 bool isPrimitiveType(const IR::Type *type);
 
 // Assigns either REG or STACK allocation to all referenced allocatable variables.

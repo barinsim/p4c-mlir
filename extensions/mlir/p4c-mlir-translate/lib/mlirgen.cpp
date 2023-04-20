@@ -113,19 +113,18 @@ void MLIRGenImplCFG::postorder(const IR::ReturnStatement* ret) {
 }
 
 void MLIRGenImplCFG::postorder(const IR::AssignmentStatement* assign) {
-    BUG_CHECK(assign->left->is<IR::PathExpression>(), "Not implemented");
-    auto* pe = assign->left->to<IR::PathExpression>();
     auto rValue = toValue(assign->right);
 
     // Write to an SSA register allocated variable
-    if (ssaInfo.isSSARef(pe)) {
+    auto* pe = assign->left->to<IR::PathExpression>();
+    if (pe && ssaInfo.isSSARef(pe)) {
         mlir::Value value = builder.create<p4mlir::CopyOp>(loc(builder, assign), rValue);
         addValue(assign->left, value);
         return;
     }
 
     // Write to a stack allocated variable
-    mlir::Value addr = toValue(pe);
+    mlir::Value addr = toValue(assign->left);
     BUG_CHECK(addr.getType().isa<p4mlir::RefType>(), "Stack allocated variable without an address");
     builder.create<p4mlir::StoreOp>(loc(builder, assign), addr, rValue);
 }
@@ -199,11 +198,39 @@ void MLIRGenImplCFG::postorder(const IR::Operation_Relation* cmp) {
 }
 
 void MLIRGenImplCFG::postorder(const IR::Member* mem) {
-    // TODO: this needs to consider if the object is in reg or stack
     auto type = toMLIRType(builder, typeMap->getType(mem));
     auto name = builder.getStringAttr(mem->member.toString().c_str());
-    mlir::Value val =
-        builder.create<p4mlir::GetMemberOp>(loc(builder, mem), type, toValue(mem->expr), name);
+    mlir::Value baseValue = toValue(mem->expr);
+    mlir::Type baseType = baseValue.getType();
+
+    // Materialize member of a register allocated variable
+    if (!baseType.isa<p4mlir::RefType>()) {
+        BUG_CHECK(isRead(),
+                  "Member access to a register variable can be used only in a read context");
+        mlir::Value val =
+            builder.create<p4mlir::GetMemberOp>(loc(builder, mem), type, baseValue, name);
+        addValue(mem, val);
+        return;
+    }
+
+    // Retrieve member reference
+    auto refType = wrappedIntoRef(builder, type);
+    mlir::Value addr =
+        builder.create<p4mlir::GetMemberRefOp>(loc(builder, mem), refType, baseValue, name);
+
+    // Member variable is written, return just the reference
+    if (isWrite()) {
+        addValue(mem, addr);
+        return;
+    }
+
+    // Member variable is only read.
+    // Materialize the value
+    if (findContext<IR::Member>()) {
+        // TODO: in read context we only need to load the last access of a stack variable
+        BUG_CHECK(false, "Not implemented");
+    }
+    mlir::Value val = builder.create<p4mlir::LoadOp>(loc(builder, mem), type, addr);
     addValue(mem, val);
 }
 
@@ -342,7 +369,15 @@ void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
         return;
     }
 
+    // Even if only read, do not materialize a composite value only because of a member access
+    BUG_CHECK(!findContext<IR::ArrayIndex>(), "Not implemented");
+    if (findContext<IR::Member>()) {
+        addValue(pe, addr);
+        return;
+    }
+
     // Materialize the value in a read context
+    BUG_CHECK(isRead(), "Value must be within a read context");
     auto refType = addr.getType().cast<p4mlir::RefType>();
     auto val = builder.create<p4mlir::LoadOp>(loc(builder, pe), refType.getType(), addr);
     addValue(pe, val);

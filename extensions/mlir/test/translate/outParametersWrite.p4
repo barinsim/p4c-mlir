@@ -28,9 +28,12 @@ action foo(inout int<10> arg1, out int<10> arg2, inout MyHeader hdr_arg, int<10>
     // CHECK-NEXT: p4.store(%arg1, %arg3) : (!p4.ref<si10>, si10) -> ()
     // CHECK-NEXT: p4.store(%arg0, %arg3) : (!p4.ref<si10>, si10) -> ()
     // CHECK-NEXT: %7 = p4.uninitialized : !p4.header<"MyHeader">
-    // CHECK-NEXT: p4.store(%arg2, %7) : (!p4.ref<!p4.header<"MyHeader">>, !p4.header<"MyHeader">) -> ()
-    // CHECK-NEXT: %8 = p4.load(%arg2) : !p4.ref<!p4.header<"MyHeader">> -> !p4.header<"MyHeader">
-    // CHECK-NEXT: %9 = p4.copy(%8) : !p4.header<"MyHeader"> -> !p4.header<"MyHeader">
+    // CHECK-NEXT: %8 = p4.alloc : !p4.ref<!p4.header<"MyHeader">>
+    // CHECK-NEXT: p4.store(%8, %7) : (!p4.ref<!p4.header<"MyHeader">>, !p4.header<"MyHeader">) -> ()
+    // CHECK-NEXT: %9 = p4.load(%8) : !p4.ref<!p4.header<"MyHeader">> -> !p4.header<"MyHeader">
+    // CHECK-NEXT: p4.store(%arg2, %9) : (!p4.ref<!p4.header<"MyHeader">>, !p4.header<"MyHeader">) -> ()
+    // CHECK-NEXT: %10 = p4.load(%arg2) : !p4.ref<!p4.header<"MyHeader">> -> !p4.header<"MyHeader">
+    // CHECK-NEXT: p4.store(%8, %10) : (!p4.ref<!p4.header<"MyHeader">>, !p4.header<"MyHeader">) -> ()
     // CHECK-NEXT: p4.return
 // CHECK-NEXT: }
 

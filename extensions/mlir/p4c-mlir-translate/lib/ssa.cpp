@@ -79,20 +79,24 @@ bool AllocateVariables::preorder(const IR::Parameter* param) {
 }
 
 bool AllocateVariables::preorder(const IR::PathExpression* pe) {
-    auto* type = typeMap->getType(pe, true);
-    if (!isPrimitiveType(type)) {
-        return true;
-    }
+    // Skip references that do no need allocation
     CHECK_NULL(pe->path);
     auto* decl = refMap->getDeclaration(pe->path, true);
+    if (!allocation.count(decl)) {
+        return true;
+    }
 
     // Variables used as an out or inout arguments must be STACK allocated.
     // This aligns with parameter allocations
+    auto* type = typeMap->getType(pe, true);
     if (findContext<IR::Argument>() && isWrite()) {
         allocateToStack(decl);
     }
 
-    // TODO: written structs_likes
+    // Written composite type variables must be allocated to stack
+    if (type->is<IR::Type_StructLike>() && isWrite()) {
+        allocateToStack(decl);
+    }
 
     return true;
 }
