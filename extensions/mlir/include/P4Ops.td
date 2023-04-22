@@ -98,6 +98,18 @@ def MemberDeclOp : P4Op<"member_decl", [Symbol]> {
     let assemblyFormat = "attr-dict $sym_name `:` $type";
 }
 
+def ValidBitDeclOp : P4Op<"valid_bit_decl", [Symbol]> {
+    // TODO: type must be bool
+    let arguments = (ins SymbolNameAttr:$sym_name, TypeAttr:$type);
+    let assemblyFormat = "attr-dict $sym_name `:` $type";
+
+    let builders = [
+        OpBuilder<(ins "llvm::StringRef":$name), [{
+            build($_builder, $_state, name, mlir::IntegerType::get($_builder.getContext(), 1, mlir::IntegerType::Signless));
+        }]>
+    ];
+}
+
 class ArithmeticOperator<string mnemonic, list<Trait> traits = []>
     : P4Op<mnemonic,
            !listconcat([Pure, SameOperandsAndResultType], traits)> {
@@ -171,9 +183,15 @@ def SelfOp : P4Op<"self"> {
 }
 
 def CallOp : P4Op<"call", [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
-    let arguments = (ins FlatSymbolRefAttr:$callee, Variadic<AnyType>:$operands);
+    let arguments = (ins SymbolRefAttr:$callee, Variadic<AnyType>:$operands);
     let results = (outs Variadic<AnyType>);
     let assemblyFormat = "$callee `(` $operands `)` attr-dict `:` functional-type($operands, results)";
+
+    let builders = [
+        OpBuilder<(ins "::mlir::SymbolRefAttr":$callee, "::mlir::ValueRange":$operands), [{
+            build($_builder, $_state, mlir::TypeRange{}, callee, operands);
+        }]>
+    ];
 }
 
 

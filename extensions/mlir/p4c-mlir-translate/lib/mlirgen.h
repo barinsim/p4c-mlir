@@ -81,11 +81,11 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
     const ordered_map<const BasicBlock*, mlir::Block*>& blocksMapping;
 
     // Stores types of expressions
-    const P4::TypeMap* typeMap = nullptr;
+    P4::TypeMap* typeMap = nullptr;
 
     // Stores mapping of P4 references to its P4 declarations.
     // Does not take SSA into account
-    const P4::ReferenceMap* refMap = nullptr;
+    P4::ReferenceMap* refMap = nullptr;
 
     // SSA mapping of the currently visited CFG.
     // Stores phi functions and SSA value numbering
@@ -107,7 +107,7 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
  public:
     MLIRGenImplCFG(mlir::OpBuilder &builder_,
                    const ordered_map<const BasicBlock *, mlir::Block *> &blocksMapping_,
-                   const P4::TypeMap *typeMap_, const P4::ReferenceMap *refMap_,
+                   P4::TypeMap *typeMap_, P4::ReferenceMap *refMap_,
                    const SSAInfo& ssaInfo_,
                    std::map<SSARefType, mlir::Value>& ssaRefToValue_,
                    ordered_set<const IR::IDeclaration*> members_,
@@ -191,15 +191,15 @@ class MLIRGenImpl : public Inspector
 {
     mlir::OpBuilder& builder;
 
-    const P4::TypeMap* typeMap = nullptr;
-    const P4::ReferenceMap* refMap = nullptr;
+    P4::TypeMap* typeMap = nullptr;
+    P4::ReferenceMap* refMap = nullptr;
 
     // Control Flow Graph for all of the P4 constructs representable by a CFG
     const CFGBuilder::CFGType& cfg;
 
  public:
-    MLIRGenImpl(mlir::OpBuilder &builder_, const P4::TypeMap *typeMap_,
-                const P4::ReferenceMap *refMap_, const CFGBuilder::CFGType &cfg_)
+    MLIRGenImpl(mlir::OpBuilder &builder_, P4::TypeMap *typeMap_,
+                P4::ReferenceMap *refMap_, const CFGBuilder::CFGType &cfg_)
         : builder(builder_), typeMap(typeMap_), refMap(refMap_), cfg(cfg_) {
         CHECK_NULL(typeMap, refMap);
     }

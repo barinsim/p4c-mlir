@@ -1,5 +1,7 @@
 #include "mlirgen.h"
 
+#include "frontends/p4/methodInstance.h"
+
 
 namespace p4mlir {
 
@@ -198,7 +200,13 @@ void MLIRGenImplCFG::postorder(const IR::Operation_Relation* cmp) {
 }
 
 void MLIRGenImplCFG::postorder(const IR::Member* mem) {
-    auto type = toMLIRType(builder, typeMap->getType(mem));
+    // Callable reference does not generate any ops, skip it
+    auto p4type = typeMap->getType(mem, true);
+    if (p4type->is<IR::Type_Method>()) {
+        return;
+    }
+
+    auto type = toMLIRType(builder, p4type);
     auto name = builder.getStringAttr(mem->member.toString().c_str());
     mlir::Value baseValue = toValue(mem->expr);
     mlir::Type baseType = baseValue.getType();
@@ -235,27 +243,59 @@ void MLIRGenImplCFG::postorder(const IR::Member* mem) {
 }
 
 void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
-    // Resolve name of the callable
-    CHECK_NULL(call->method);
-    BUG_CHECK(call->method->is<IR::PathExpression>(), "Not implemented");
-    auto* expr = call->method->to<IR::PathExpression>();
-    CHECK_NULL(expr->path);
-    auto* decl = refMap->getDeclaration(expr->path);
-    llvm::StringRef name(decl->getName().toString().c_str());
-
-    // Get result MLIR type
-    mlir::TypeRange results = {};
-
     // Resolve call arguments to MLIR values
     std::vector<mlir::Value> operands;
     auto* args = call->arguments;
     std::transform(args->begin(), args->end(), std::back_inserter(operands),
                    [&](const IR::Argument *arg) { return toValue(arg); });
 
-    // Insert the call operation
-    auto callOp =
-        builder.create<p4mlir::CallOp>(loc(builder, call), results, name, operands);
-    BUG_CHECK(callOp.getNumResults() == 0, "Not implemented");
+    // 'MethodCallExpression' represents different types of calls, each of which
+    // needs to generate different ops.
+    // Figure out what call this is
+    auto* instance = P4::MethodInstance::resolve(call, refMap, typeMap);
+    auto loca = loc(builder, call);
+    CHECK_NULL(instance);
+
+    if (auto* actCall = instance->to<P4::ActionCall>()) {
+        CHECK_NULL(actCall->action);
+        auto name = mlir::SymbolRefAttr::get(
+            builder.getStringAttr(actCall->action->getName().toString().c_str()));
+        builder.create<p4mlir::CallOp>(loca, name, operands);
+    }
+    else if (auto* builtin = instance->to<P4::BuiltInMethod>()) {
+        BUG_CHECK(typeMap->getType(builtin->appliedTo, true)->is<IR::Type_Header>(),
+                  "Not implemented");
+        auto loca = loc(builder, call);
+        cstring name = builtin->name;
+        auto type = builder.getIntegerType(1);
+
+        // Generates ops to retrieve the `__valid` member, either as a p4.ref<> or loaded value.
+        // Returns the retrieved value
+        auto getValidBit = [&](mlir::Value base) -> mlir::Value {
+            auto refType = wrappedIntoRef(builder, type);
+            auto fieldName = builder.getStringAttr("__valid");
+            if (base.getType().isa<p4mlir::RefType>()) {
+                return builder.create<p4mlir::GetMemberRefOp>(loca, refType, base, fieldName);
+            }
+            return builder.create<p4mlir::GetMemberOp>(loca, type, base, fieldName);
+        };
+
+        auto member = getValidBit(toValue(builtin->appliedTo));
+
+        // Translate builtins of the header type into explicit operations on the __valid field
+        if (name == "setValid" || name == "setInvalid") {
+            auto cst = builder.create<p4mlir::ConstantOp>(loca, type, name == "setValid");
+            builder.create<p4mlir::StoreOp>(loca, member, cst);
+        } else if (name == "isValid") {
+            mlir::Value value = member;
+            if (member.getType().isa<p4mlir::RefType>()) {
+                value = builder.create<p4mlir::LoadOp>(loca, type, member);
+            }
+            addValue(call, value);
+        } else {
+            BUG_CHECK(false, "Unsupported builtin");
+        }
+    }
 
     // P4 has copy-in/copy-out semantics for calls.
     // At this point written stack allocated variables must be copied back into
@@ -659,6 +699,9 @@ bool MLIRGenImpl::preorder(const IR::Type_Header* hdr) {
 
     // Generate member declarations
     visit(hdr->fields);
+
+    // Generate validity bit member declaration, which must be the last member
+    builder.create<p4mlir::ValidBitDeclOp>(loc(builder, hdr), "__valid");
 
     builder.restoreInsertionPoint(saved);
     return false;

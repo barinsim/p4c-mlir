@@ -103,7 +103,7 @@ mlir::LogicalResult CallOp::verifySymbolUses(::mlir::SymbolTableCollection& symb
     // TODO: Add more callable ops
     ActionOp act = symbolTable.lookupNearestSymbolFrom<ActionOp>(*this, callee);
     if (!act) {
-        return emitOpError() << "'" << callee.getValue()
+        return emitOpError() << "'" << callee.getNestedReferences()
                              << "' does not reference a valid callable";
     }
 
