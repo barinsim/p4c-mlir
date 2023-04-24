@@ -149,6 +149,7 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
     void postorder(const IR::MethodCallExpression* call) override;
     void postorder(const IR::Argument* arg) override;
     void postorder(const IR::PathExpression* pe) override;
+    void postorder(const IR::StructExpression* pe) override;
 
     // --- Arithmetic Operators ---
     void postorder(const IR::Add* add) override;

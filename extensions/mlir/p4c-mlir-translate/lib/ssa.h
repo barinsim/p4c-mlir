@@ -55,7 +55,8 @@ class AllocateVariables : public Inspector, P4WriteContext
         ordered_set<const IR::IDeclaration*> getReferencedVars() const { return vars; }
 
      private:
-        bool preorder(const IR::Declaration* decl) override;
+        bool preorder(const IR::Declaration_Variable* decl) override;
+        bool preorder(const IR::Parameter* param) override;
     };
 
     const P4::ReferenceMap* refMap;

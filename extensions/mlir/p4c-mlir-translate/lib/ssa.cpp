@@ -27,12 +27,23 @@ bool isPrimitiveType(const IR::Type *type) {
            type->is<IR::Type::Boolean>() || type->is<IR::Type_StructLike>();
 }
 
-bool AllocateVariables::GatherAllocatableVariables::preorder(const IR::Declaration* decl) {
+bool AllocateVariables::GatherAllocatableVariables::preorder(
+    const IR::Declaration_Variable *decl) {
     auto* type = typeMap->getType(decl, true);
     if (!isPrimitiveType(type)) {
         return true;
     }
     vars.insert(decl);
+    return true;
+}
+
+bool AllocateVariables::GatherAllocatableVariables::preorder(
+    const IR::Parameter *param) {
+    auto* type = typeMap->getType(param, true);
+    if (!isPrimitiveType(type)) {
+        return true;
+    }
+    vars.insert(param);
     return true;
 }
 

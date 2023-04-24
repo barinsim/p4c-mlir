@@ -423,6 +423,46 @@ void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
     addValue(pe, val);
 }
 
+void MLIRGenImplCFG::postorder(const IR::StructExpression* se) {
+    // Allocate stack space for the result of the struct expression
+    CHECK_NULL(se->structType);
+    auto* typeName = se->structType->checkedTo<IR::Type_Name>();
+    CHECK_NULL(typeName->path);
+    auto* p4type = refMap->getDeclaration(typeName->path, true)->to<IR::Type>();
+    auto type = toMLIRType(builder, p4type);
+    auto refType = wrappedIntoRef(builder, type);
+    auto loca = loc(builder, se);
+    mlir::Value addr = builder.create<p4mlir::AllocOp>(loca, refType);
+
+    // Initialize the fields of the allocated stack space.
+    // The initializers are represented as {fieldName, expression} pairs
+    auto& namedExprs = se->components;
+    std::for_each(namedExprs.begin(), namedExprs.end(), [&](const IR::NamedExpression* namedExpr) {
+        auto fieldName = builder.getStringAttr(namedExpr->getName().toString().c_str());
+        auto fieldType = toMLIRType(builder, typeMap->getType(namedExpr->expression, true));
+        auto fieldRefType = wrappedIntoRef(builder, fieldType);
+        auto loca = loc(builder, se);
+        auto ref = builder.create<p4mlir::GetMemberRefOp>(loca, fieldRefType, addr, fieldName);
+        mlir::Value value = toValue(namedExpr->expression);
+        builder.create<p4mlir::StoreOp>(loca, ref, value);
+    });
+
+    // P4 states that a header initialized by a list expression has its validity bit set to `true`.
+    // MLIR represents this bit as an explicit '__valid' member field, that must be now initialized
+    // explicitly
+    if (type.isa<p4mlir::HeaderType>()) {
+        auto fieldName = builder.getStringAttr("__valid");
+        auto fieldRefType = wrappedIntoRef(builder, builder.getIntegerType(1));
+        auto ref = builder.create<p4mlir::GetMemberRefOp>(loca, fieldRefType, addr, fieldName);
+        mlir::Value cst = builder.create<p4mlir::ConstantOp>(loca, builder.getIntegerType(1), true);
+        builder.create<p4mlir::StoreOp>(loca, ref, cst);
+    }
+
+    // Always materialize the value, since `StructExpression` cannot be used in a write context
+    mlir::Value val = builder.create<p4mlir::LoadOp>(loca, type, addr);
+    addValue(se, val);
+}
+
 void MLIRGenImplCFG::postorder(const IR::Add* add) {
     handleArithmeticOp<p4mlir::AddOp>(add);
 }
