@@ -1,3 +1,5 @@
+#include "lib/gc.h"
+
 #include "frontends/common/parser_options.h"
 #include "frontends/common/options.h"
 #include "frontends/common/parseInput.h"
@@ -19,6 +21,12 @@ const IR::P4Program* parseP4(int argc, char** argv) {
     if (!program || ::errorCount() > 0) {
         return nullptr;
     }
+
+//    P4::FrontEnd frontend;
+//    program = frontend.run(options, program);
+//    if (!program || ::errorCount() > 0) {
+//        return nullptr;
+//    }
 
     return program;
 }
@@ -43,13 +51,19 @@ int main(int argc, char** argv) {
         return 0;
     }
 
+    // MLIR uses thread local storage which is not registered by GC,
+    // which causes double deletes
+    GC_disable();
+
     mlir::MLIRContext context;
     context.getOrLoadDialect<p4mlir::P4Dialect>();
+
     auto moduleOp = p4mlir::mlirGen(context, program);
     if (!moduleOp) {
         return 1;
     }
 
     moduleOp->print(llvm::outs());
+
     return 0;
 }

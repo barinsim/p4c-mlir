@@ -33,6 +33,12 @@ mlir::Type toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) {
         BUG_CHECK(type, "Could not retrieve Header type");
         return type;
     }
+    else if (auto* str = p4type->to<IR::Type_Struct>()) {
+        cstring name = str->name;
+        auto type = p4mlir::StructType::get(builder.getContext(), llvm::StringRef(name.c_str()));
+        BUG_CHECK(type, "Could not retrieve Struct type");
+        return type;
+    }
     else if (auto* control = p4type->to<IR::Type_Control>()) {
         cstring name = control->name;
         auto type = p4mlir::ControlType::get(builder.getContext(), llvm::StringRef(name.c_str()));
@@ -221,7 +227,7 @@ void MLIRGenImplCFG::postorder(const IR::Member* mem) {
         return;
     }
 
-    // Retrieve member reference
+    // Retrieve member reference of a stack allocated variable
     auto refType = wrappedIntoRef(builder, type);
     mlir::Value addr =
         builder.create<p4mlir::GetMemberRefOp>(loc(builder, mem), refType, baseValue, name);
@@ -233,10 +239,11 @@ void MLIRGenImplCFG::postorder(const IR::Member* mem) {
     }
 
     // Member variable is only read.
-    // Materialize the value
+    // If this is the last member access within the path, materialize the value.
+    // Otherwise return just a reference
     if (findContext<IR::Member>()) {
-        // TODO: in read context we only need to load the last access of a stack variable
-        BUG_CHECK(false, "Not implemented");
+        addValue(mem, addr);
+        return;
     }
     mlir::Value val = builder.create<p4mlir::LoadOp>(loc(builder, mem), type, addr);
     addValue(mem, val);
@@ -747,8 +754,28 @@ bool MLIRGenImpl::preorder(const IR::Type_Header* hdr) {
     return false;
 }
 
+bool MLIRGenImpl::preorder(const IR::Type_Struct* str) {
+    // Create StructOp and insert 1 block
+    cstring name = str->name;
+    auto strOp = builder.create<p4mlir::StructOp>(loc(builder, str), llvm::StringRef(name.c_str()));
+    auto saved = builder.saveInsertionPoint();
+    auto& block = strOp.getBody().emplaceBlock();
+    builder.setInsertionPointToEnd(&block);
+
+    // Generate member declarations
+    visit(str->fields);
+
+    builder.restoreInsertionPoint(saved);
+    return false;
+}
+
 bool MLIRGenImpl::preorder(const IR::StructField* field) {
-    auto type = toMLIRType(builder, field->type);
+    auto* p4type = field->type;
+    if (auto* typeName = p4type->to<IR::Type_Name>()) {
+        CHECK_NULL(typeName->path);
+        p4type = refMap->getDeclaration(typeName->path, true)->to<IR::Type>();
+    }
+    auto type = toMLIRType(builder, p4type);
     cstring name = field->name;
     builder.create<p4mlir::MemberDeclOp>(loc(builder, field), llvm::StringRef(name), type);
     return false;

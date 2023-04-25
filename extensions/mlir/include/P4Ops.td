@@ -93,6 +93,12 @@ def HeaderOp : P4Op<"header", [SymbolTable, Symbol, IsolatedFromAbove, NoTermina
     let assemblyFormat = "attr-dict $sym_name $body";
 }
 
+def StructOp : P4Op<"struct", [SymbolTable, Symbol, IsolatedFromAbove, NoTerminator]> {
+    let arguments = (ins SymbolNameAttr:$sym_name);
+    let regions = (region MinSizedRegion<1>:$body);
+    let assemblyFormat = "attr-dict $sym_name $body";
+}
+
 def MemberDeclOp : P4Op<"member_decl", [Symbol]> {
     let arguments = (ins SymbolNameAttr:$sym_name, TypeAttr:$type);
     let assemblyFormat = "attr-dict $sym_name `:` $type";
@@ -134,6 +140,11 @@ def HeaderType : P4Dialect_Type<"Header", "header"> {
     let assemblyFormat = "`<` $name `>`";
 }
 
+def StructType : P4Dialect_Type<"Struct", "struct"> {
+    let parameters = (ins StringRefParameter<"Struct type name">:$name);
+    let assemblyFormat = "`<` $name `>`";
+}
+
 def ControlType : P4Dialect_Type<"Control", "control"> {
     let parameters = (ins StringRefParameter<"Control type name">:$name);
     let assemblyFormat = "`<` $name `>`";
@@ -164,7 +175,8 @@ def StoreOp : P4Op<"store"> {
 
 // TODO: the 'member_name' should be a symbol not string
 def GetMemberOp : P4Op<"get_member"> {
-    let arguments = (ins HeaderType:$base, Builtin_StringAttr:$member_name);
+    // TODO: constraint 'base' to composite types
+    let arguments = (ins AnyType:$base, Builtin_StringAttr:$member_name);
     let results = (outs AnyType:$result);
     let assemblyFormat = "attr-dict `(` $base `)` $member_name `:` qualified(type($base)) `->` type($result)";
 }
