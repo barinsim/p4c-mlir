@@ -45,6 +45,24 @@ mlir::Type toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) {
         BUG_CHECK(type, "Could not retrieve Control type");
         return type;
     }
+    else if (auto* method = p4type->to<IR::Type_MethodBase>()) {
+        std::vector<mlir::Type> paramTypes;
+        std::vector<mlir::Type> retTypes;
+        auto* params = method->parameters;
+        std::transform(params->begin(), params->end(), std::back_inserter(paramTypes),
+                       [&](auto *param) {
+                           auto type = toMLIRType(builder, param->type);
+                           auto dir = param->direction;
+                           if (dir == IR::Direction::Out || dir == IR::Direction::InOut) {
+                               type = wrappedIntoRef(builder, type);
+                           }
+                           return type;
+                       });
+        if (method->returnType && !method->returnType->is<IR::Type_Void>()) {
+            retTypes.push_back(toMLIRType(builder, method->returnType));
+        }
+        return builder.getFunctionType(paramTypes, retTypes);
+    }
 
     throw std::domain_error("Not implemented");
     return nullptr;
@@ -258,7 +276,7 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
 
     // 'MethodCallExpression' represents different types of calls, each of which
     // needs to generate different ops.
-    // Figure out what call this is
+    // Figure out which call this is and generate correct mlir
     auto* instance = P4::MethodInstance::resolve(call, refMap, typeMap);
     auto loca = loc(builder, call);
     CHECK_NULL(instance);
@@ -301,6 +319,22 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
             addValue(call, value);
         } else {
             BUG_CHECK(false, "Unsupported builtin");
+        }
+    }
+    else if (auto* externFunc = instance->to<P4::ExternFunction>()) {
+        auto name = mlir::SymbolRefAttr::get(
+            builder.getStringAttr(externFunc->method->getName().toString().c_str()));
+
+        // TODO: overloaded function names
+
+        auto* p4RetType = externFunc->method->type->returnType;
+        if (!p4RetType || p4RetType->is<IR::Type_Void>()) {
+            // P4 mlir does not have a void type, the call in this case has 0 return types
+            builder.create<p4mlir::CallOp>(loca, name, operands);
+        } else {
+            auto retType = toMLIRType(builder, p4RetType);
+            auto callOp = builder.create<p4mlir::CallOp>(loca, retType, name, operands);
+            addValue(call, callOp.getResult(0));
         }
     }
 
@@ -591,13 +625,24 @@ bool MLIRGenImpl::preorder(const IR::P4Control* control) {
 bool MLIRGenImpl::preorder(const IR::P4Action* action) {
     // Create ActionOp
     llvm::StringRef name(action->getName().toString());
-    auto actOp = builder.create<p4mlir::ActionOp>(loc(builder, action), name);
+    auto funcType = toMLIRType(builder, typeMap->getType(action, true));
+    auto actOp = builder.create<p4mlir::ActionOp>(loc(builder, action), name,
+                                                  funcType.cast<mlir::FunctionType>());
     auto saved = builder.saveInsertionPoint();
 
     // Generate action body
     genMLIRFromCFG(action, actOp.getBody());
 
     builder.restoreInsertionPoint(saved);
+    return false;
+}
+
+bool MLIRGenImpl::preorder(const IR::Method* method) {
+    // Create ExternOp
+    llvm::StringRef name(method->getName().toString());
+    auto funcType = toMLIRType(builder, typeMap->getType(method, true));
+    auto actOp = builder.create<p4mlir::ExternOp>(loc(builder, method), name,
+                                                  funcType.cast<mlir::FunctionType>());
     return false;
 }
 

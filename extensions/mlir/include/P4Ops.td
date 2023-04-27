@@ -5,6 +5,7 @@ include "P4Dialect.td"
 
 include "mlir/Interfaces/InferTypeOpInterface.td"
 include "mlir/Interfaces/SideEffectInterfaces.td"
+include "mlir/IR/FunctionInterfaces.td"
 include "mlir/IR/SymbolInterfaces.td"
 include "mlir/IR/AttrTypeBase.td"
 include "mlir/IR/OpBase.td"
@@ -33,11 +34,60 @@ def ControlOp : P4Op<"control", [IsolatedFromAbove, NoTerminator]> {
     let hasCustomAssemblyFormat = 1;
 }
 
-def ActionOp : P4Op<"action", [Symbol]> {
-    let arguments = (ins SymbolNameAttr:$sym_name);
+def ActionOp : P4Op<"action", [Symbol, FunctionOpInterface]> {
+    let arguments = (ins SymbolNameAttr:$sym_name,
+                       TypeAttrOf<FunctionType>:$function_type,
+                       OptionalAttr<StrAttr>:$sym_visibility,
+                       OptionalAttr<DictArrayAttr>:$arg_attrs,
+                       OptionalAttr<DictArrayAttr>:$res_attrs);
     let regions = (region MinSizedRegion<1>:$body);
-
     let hasCustomAssemblyFormat = 1;
+
+    let builders = [OpBuilder<(ins
+        "::llvm::StringRef":$name, "FunctionType":$type,
+        CArg<"::llvm::ArrayRef<NamedAttribute>", "{}">:$attrs,
+        CArg<"::llvm::ArrayRef<DictionaryAttr>", "{}">:$argAttrs)
+    >];
+
+    let extraClassDeclaration = [{
+        //===------------------------------------------------------------------===//
+        // FunctionOpInterface Methods
+        //===------------------------------------------------------------------===//
+
+        /// Returns the argument types of this function.
+        ::llvm::ArrayRef<::mlir::Type> getArgumentTypes() { return getFunctionType().getInputs(); }
+
+        /// Returns the result types of this function.
+        ::llvm::ArrayRef<::mlir::Type> getResultTypes() { return getFunctionType().getResults(); }
+    }];
+}
+
+def ExternOp : P4Op<"extern", [Symbol, FunctionOpInterface]> {
+    let arguments = (ins SymbolNameAttr:$sym_name,
+                       TypeAttrOf<FunctionType>:$function_type,
+                       OptionalAttr<StrAttr>:$sym_visibility,
+                       OptionalAttr<DictArrayAttr>:$arg_attrs,
+                       OptionalAttr<DictArrayAttr>:$res_attrs);
+    let regions = (region AnyRegion:$body);
+    let hasCustomAssemblyFormat = 1;
+
+    let builders = [OpBuilder<(ins
+        "::llvm::StringRef":$name, "FunctionType":$type,
+        CArg<"::llvm::ArrayRef<NamedAttribute>", "{}">:$attrs,
+        CArg<"::llvm::ArrayRef<DictionaryAttr>", "{}">:$argAttrs)
+   >];
+
+    let extraClassDeclaration = [{
+        //===------------------------------------------------------------------===//
+        // FunctionOpInterface Methods
+        //===------------------------------------------------------------------===//
+
+        /// Returns the argument types of this function.
+        ::llvm::ArrayRef<::mlir::Type> getArgumentTypes() { return getFunctionType().getInputs(); }
+
+        /// Returns the result types of this function.
+        ::llvm::ArrayRef<::mlir::Type> getResultTypes() { return getFunctionType().getResults(); }
+    }];
 }
 
 def ApplyOp : P4Op<"apply", [HasParent<"ControlOp">]> {
@@ -202,6 +252,10 @@ def CallOp : P4Op<"call", [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
     let builders = [
         OpBuilder<(ins "::mlir::SymbolRefAttr":$callee, "::mlir::ValueRange":$operands), [{
             build($_builder, $_state, mlir::TypeRange{}, callee, operands);
+        }]>,
+
+        OpBuilder<(ins "::mlir::Type":$resultType, "::mlir::SymbolRefAttr":$callee, "::mlir::ValueRange":$operands), [{
+            build($_builder, $_state, mlir::TypeRange{resultType}, callee, operands);
         }]>
     ];
 }

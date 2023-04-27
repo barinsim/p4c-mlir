@@ -7,9 +7,12 @@
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/Interfaces/InferTypeOpInterface.h"
 #include "mlir/Interfaces/SideEffectInterfaces.h"
+#include "mlir/IR/FunctionInterfaces.h"
 #include "mlir/Dialect/ControlFlow/IR/ControlFlowOps.h"
 
 #include "llvm/ADT/TypeSwitch.h"
+
+using namespace ::mlir;
 
 #define GET_TYPEDEF_CLASSES
 #include "P4OpsTypes.h.inc"

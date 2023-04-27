@@ -208,6 +208,7 @@ class MLIRGenImpl : public Inspector
  private:
     bool preorder(const IR::P4Control* control) override;
     bool preorder(const IR::P4Action* action) override;
+    bool preorder(const IR::Method* method) override;
     bool preorder(const IR::Type_Header* hdr) override;
     bool preorder(const IR::Type_Struct* str) override;
     bool preorder(const IR::StructField* field) override;
