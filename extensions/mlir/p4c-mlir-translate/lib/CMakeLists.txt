@@ -10,6 +10,7 @@ add_mlir_translation_library(p4c-mlir-translate-lib
   domTree.cpp
   ssa.cpp
   mlirgen.cpp
+  utils.cpp
   
   DEPENDS
   genIR

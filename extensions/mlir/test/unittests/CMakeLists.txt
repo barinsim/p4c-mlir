@@ -3,6 +3,7 @@ set (
     cfgBuilderTests.cpp
     domTreeTests.cpp
     ssaTests.cpp
+    utilsTests.cpp
     common.cpp
 
     ${P4C_SOURCE_DIR}/test/gtest/helpers.cpp

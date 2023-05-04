@@ -90,31 +90,6 @@ std::vector<mlir::Value> createBlockArgs(const SSAInfo &ssaInfo, const BasicBloc
     return rv;
 }
 
-// Collects member variables declared within control or parser blocks
-class GatherMemberVariables : public Inspector
-{
-    // Gathered member variables
-    ordered_set<const IR::IDeclaration*> members;
-
- public:
-    ordered_set<const IR::IDeclaration*> get() const { return members; }
-
- private:
-    bool preorder(const IR::P4Control* control) override {
-        auto& decls = control->controlLocals;
-        std::for_each(decls.begin(), decls.end(), [&](const IR::IDeclaration* decl) {
-            if (decl->is<IR::Declaration_Variable>()) {
-                members.insert(decl);
-            }
-        });
-        return false;
-    }
-
-    bool preorder(const IR::P4Parser* parser) override {
-        BUG_CHECK(false, "Not implemented");
-    }
-};
-
 } // namespace
 
 void MLIRGenImplCFG::postorder(const IR::BoolLiteral* boolean) {
@@ -282,9 +257,7 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
     CHECK_NULL(instance);
 
     if (auto* actCall = instance->to<P4::ActionCall>()) {
-        CHECK_NULL(actCall->action);
-        auto name = mlir::SymbolRefAttr::get(
-            builder.getStringAttr(actCall->action->getName().toString().c_str()));
+        auto name = symbols.getSymbol(actCall->action);
         builder.create<p4mlir::CallOp>(loca, name, operands);
     }
     else if (auto* builtin = instance->to<P4::BuiltInMethod>()) {
@@ -322,8 +295,7 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
         }
     }
     else if (auto* externFunc = instance->to<P4::ExternFunction>()) {
-        auto name = mlir::SymbolRefAttr::get(
-            builder.getStringAttr(externFunc->method->getName().toString().c_str()));
+        auto name = symbols.getSymbol(externFunc->method);
 
         // TODO: overloaded function names
 
@@ -597,17 +569,45 @@ std::optional<mlir::Value> MLIRGenImplCFG::getSelfValue() const {
 }
 
 bool MLIRGenImpl::preorder(const IR::P4Control* control) {
+    // Collect types of the apply parameters of this control block
+    std::vector<mlir::Type> applyTypes;
+    auto* applyParams = control->getApplyParameters();
+    std::transform(applyParams->begin(), applyParams->end(), std::back_inserter(applyTypes),
+                   [&](const IR::Parameter* param) {
+                       auto type = toMLIRType(builder, typeMap->getType(param, true));
+                       auto dir = param->direction;
+                       if (dir == IR::Direction::InOut || dir == IR::Direction::Out) {
+                           type = wrappedIntoRef(builder, type);
+                       }
+                       return type;
+                   });
+
+    // Collect types of the constructor parameters of this control block
+    std::vector<mlir::Type> ctrTypes;
+    auto* ctrParams = control->constructorParams;
+    std::transform(ctrParams->begin(), ctrParams->end(), std::back_inserter(ctrTypes),
+                   [&](const IR::Declaration* param) {
+                       auto* type = typeMap->getType(param, true);
+                       return toMLIRType(builder, type);
+                   });
+
     // Create ControlOp with 1 block
     llvm::StringRef name(control->getName().toString());
-    auto controlOp = builder.create<p4mlir::ControlOp>(loc(builder, control), name);
+    auto ctrFuncType = builder.getFunctionType(ctrTypes, mlir::TypeRange{});
+    auto applyFuncType = builder.getFunctionType(applyTypes, mlir::TypeRange{});
+    auto controlOp =
+        builder.create<p4mlir::ControlOp>(loc(builder, control), name, applyFuncType, ctrFuncType);
     auto saved = builder.saveInsertionPoint();
     auto& block = controlOp.getBody().emplaceBlock();
     builder.setInsertionPointToStart(&block);
 
     // Add P4 apply parameters as MLIR block parameters
-    auto* applyParams = control->getApplyParameters();
-    std::for_each(applyParams->begin(), applyParams->end(), [&](const IR::Declaration* param) {
-        auto type = toMLIRType(builder, typeMap->getType(param));
+    std::for_each(applyTypes.begin(), applyTypes.end(), [&](mlir::Type type) {
+        block.addArgument(type, loc(builder, control));
+    });
+
+    // Add P4 constructor parameters as MLIR block parameters
+    std::for_each(ctrTypes.begin(), ctrTypes.end(), [&](mlir::Type type) {
         block.addArgument(type, loc(builder, control));
     });
 
@@ -616,7 +616,7 @@ bool MLIRGenImpl::preorder(const IR::P4Control* control) {
 
     // Generate the apply method
     auto applyOp = builder.create<p4mlir::ApplyOp>(loc(builder, control->body));
-    genMLIRFromCFG(control->body, applyOp.getBody());
+    genMLIRFromCFG(control, control->body, applyOp.getBody());
 
     builder.restoreInsertionPoint(saved);
     return false;
@@ -630,8 +630,11 @@ bool MLIRGenImpl::preorder(const IR::P4Action* action) {
                                                   funcType.cast<mlir::FunctionType>());
     auto saved = builder.saveInsertionPoint();
 
+    // Find enclosing control block (does not have to exist)
+    BlockContext context = findContext<IR::P4Control>();
+
     // Generate action body
-    genMLIRFromCFG(action, actOp.getBody());
+    genMLIRFromCFG(context, action, actOp.getBody());
 
     builder.restoreInsertionPoint(saved);
     return false;
@@ -646,7 +649,8 @@ bool MLIRGenImpl::preorder(const IR::Method* method) {
     return false;
 }
 
-void MLIRGenImpl::genMLIRFromCFG(const IR::Node* decl, mlir::Region& targetRegion) {
+void MLIRGenImpl::genMLIRFromCFG(BlockContext context, const IR::Node *decl,
+                                 mlir::Region &targetRegion) {
     CHECK_NULL(decl);
     BUG_CHECK(cfg.count(decl), "Could retrieve CFG for the declaration");
     auto saved = builder.saveInsertionPoint();
@@ -662,10 +666,6 @@ void MLIRGenImpl::genMLIRFromCFG(const IR::Node* decl, mlir::Region& targetRegio
     });
 
     // Create ssa mapping for this cfg
-    auto* context = getCurrentNode<IR::IApply>();
-    if (!context) {
-        context = findContext<IR::IApply>();
-    }
     SSAInfo ssaInfo(context, {decl, entry}, refMap, typeMap);
 
     // Stores mapping of P4 ssa values to its MLIR counterparts.
@@ -680,7 +680,7 @@ void MLIRGenImpl::genMLIRFromCFG(const IR::Node* decl, mlir::Region& targetRegio
         auto phiInfo = ssaInfo.getPhiInfo(bb);
         for (auto& [decl, phi] : phiInfo) {
             auto loc = builder.getUnknownLoc();
-            auto type = toMLIRType(builder, typeMap->getType(decl->to<IR::Declaration>()));
+            auto type = toMLIRType(builder, typeMap->getType(decl->to<IR::Declaration>(), true));
             if (!ssaInfo.isSSARef(decl)) {
                 type = wrappedIntoRef(builder, type);
             }
@@ -693,37 +693,31 @@ void MLIRGenImpl::genMLIRFromCFG(const IR::Node* decl, mlir::Region& targetRegio
         }
     });
 
-    // Add mapping of the outer apply parameters, so that references of these parameters can be
+    // Add mapping of the outer apply/ctr parameters, so that references of these parameters can be
     // resolved. These MLIR parameters must already be created
     if (context) {
         mlir::Region* parent = targetRegion.getParentRegion();
         auto blockParams = parent->getArguments();
-        auto* applyParams = context->getApplyParameters();
-        BUG_CHECK(blockParams.size() == applyParams->size(),
-                  "Number of P4 apply parameters and MLIR block parameters must match");
-        for (int i = 0; i < blockParams.size(); ++i) {
-            auto* applyParam = applyParams->getParameter(i);
-            BUG_CHECK(ssaInfo.isSSARef(applyParam), "Could not find SSA info for the parameter");
-            auto id = ssaInfo.getID(applyParam);
-            SSARefType ref{applyParam, id};
-            ssaRefMap.insert({ref, blockParams[i]});
+        auto* applyParams = context.getApplyParameters();
+        auto* ctrParams = context.getConstructorParameters();
+        BUG_CHECK(blockParams.size() == applyParams->size() + ctrParams->size(),
+                  "Number of P4 parameters and MLIR block parameters must match");
+        int blockParamIdx = 0;
+        for (auto* params : {applyParams, ctrParams}) {
+            for (int i = 0; i < params->size(); ++i) {
+                auto* param = params->getParameter(i);
+                BUG_CHECK(ssaInfo.isSSARef(param), "Could not find SSA info for the parameter");
+                auto id = ssaInfo.getID(param);
+                SSARefType ref{param, id};
+                auto bParam = blockParams[blockParamIdx++];
+                ssaRefMap.insert({ref, bParam});
+            }
         }
     }
 
-    // Gathers member variables from parser or control block.
-    // Context can be `nullptr` in which case empty set is returned
-    auto gatherMemberVariables = [](const IR::IApply* context) {
-        if (!context) {
-            return ordered_set<const IR::IDeclaration*>();
-        }
-        BUG_CHECK(context->is<IR::P4Parser>() || context->is<IR::P4Control>(),
-                  "Expected parser or control block");
-        GatherMemberVariables gmv;
-        context->to<IR::Node>()->apply(gmv);
-        return gmv.get();
-    };
-
-    auto members = gatherMemberVariables(context);
+    // Get member variables of the context block.
+    // Context does not have to exist in which case empty set is returned
+    auto members = context.getMemberVariables();
 
     // Optionally create `self` value which is used to access member variables
     std::optional<mlir::Value> selfValue;
@@ -731,13 +725,7 @@ void MLIRGenImpl::genMLIRFromCFG(const IR::Node* decl, mlir::Region& targetRegio
         BUG_CHECK(mapping.count(entry), "Could not retrieve entry MLIR block");
         auto* block = mapping.at(entry);
         builder.setInsertionPointToStart(block);
-        const IR::Type* p4type = nullptr;
-        if (auto* control = context->to<IR::P4Control>()) {
-            p4type = control->type;
-        }
-        if (auto* parser = context->to<IR::P4Parser>()) {
-            p4type = parser->type;
-        }
+        const IR::Type* p4type = context.getType();
         auto contextType = toMLIRType(builder, p4type);
         auto refType = wrappedIntoRef(builder, contextType);
         selfValue = builder.create<p4mlir::SelfOp>(loc(builder, decl), refType);
@@ -745,7 +733,7 @@ void MLIRGenImpl::genMLIRFromCFG(const IR::Node* decl, mlir::Region& targetRegio
 
     // Fill the MLIR Blocks with Ops
     MLIRGenImplCFG cfgGen(builder, mapping, typeMap, refMap, ssaInfo, ssaRefMap, members,
-                          selfValue);
+                          selfValue, context, symbols);
     CFGWalker::preorder(entry, [&](BasicBlock* bb) {
         BUG_CHECK(mapping.count(bb), "Could not retrieve MLIR block");
         auto* block = mapping.at(bb);

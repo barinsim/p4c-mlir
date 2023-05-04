@@ -218,7 +218,7 @@ ordered_set<const IR::IDeclaration *> SSAInfo::Builder::getPhiInfo(
     return decls;
 }
 
-SSAInfo::SSAInfo(const IR::IApply* context, std::pair<const IR::Node*, const BasicBlock*> cfg,
+SSAInfo::SSAInfo(BlockContext context, std::pair<const IR::Node*, const BasicBlock*> cfg,
                  const P4::ReferenceMap *refMap, const P4::TypeMap *typeMap) {
     CHECK_NULL(cfg.first, cfg.second, refMap, typeMap);
     auto* entry = cfg.second;
@@ -232,7 +232,8 @@ SSAInfo::SSAInfo(const IR::IApply* context, std::pair<const IR::Node*, const Bas
     AllocateVariables alloc(refMap, typeMap);
     decl->apply(alloc);
     if (context) {
-        context->getApplyParameters()->apply(alloc);
+        context.getApplyParameters()->apply(alloc);
+        context.getConstructorParameters()->apply(alloc);
     }
     auto ssaVars = alloc.getRegVariables();
 
@@ -302,16 +303,19 @@ SSAInfo::SSAInfo(const IR::IApply* context, std::pair<const IR::Node*, const Bas
     };
 
     // Assigns number to each SSA value reference including phi nodes.
-    // Considers outter apply parameters of a context as well
+    // Considers outer apply/ctr parameters of a context as well
     auto numberSSAValues = [&]() {
         ordered_map<const IR::IDeclaration*, ID> nextIDs;
         ordered_map<const IR::IDeclaration*, std::stack<ID>> stkIDs;
         if (context) {
-            auto* params = context->getApplyParameters();
-            std::for_each(params->begin(), params->end(), [&](auto* param) {
-                stkIDs[param].push((ID)0);
-                b.numberRef((ID)0, param);
-            });
+            auto* applyParams = context.getApplyParameters();
+            auto* ctrParams = context.getConstructorParameters();
+            for (auto* params : {applyParams, ctrParams}) {
+                std::for_each(params->begin(), params->end(), [&](auto* param) {
+                    stkIDs[param].push((ID)0);
+                    b.numberRef((ID)0, param);
+                });
+            }
         }
         rename(entry, b, nextIDs, stkIDs, domTree, typeMap, refMap, ssaVars);
     };

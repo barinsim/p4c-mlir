@@ -38,4 +38,24 @@ p4mlir::BasicBlock* getByStmtString(p4mlir::BasicBlock* entry, const std::string
     return bbs.front();
 }
 
+ParseOutput parseP4ForTests(const std::string& p4string) {
+    auto* program = P4::parseP4String(p4string, CompilerOptions::FrontendVersion::P4_16);
+    if (::errorCount() > 0) {
+        return ParseOutput{.ast = program};
+    }
+    auto* refMap = new P4::ReferenceMap();
+    auto* typeMap = new P4::TypeMap();
+    program = program->apply(P4::ResolveReferences(refMap));
+    program = program->apply(P4::TypeInference(refMap, typeMap, false, true));
+    program = program->apply(P4::TypeChecking(refMap, typeMap, true));
+    return ParseOutput{.ast = program, .typeMap = typeMap, .refMap = refMap};
+}
+
+TestMLIRContext createMLIRContext() {
+    auto context = std::make_unique<mlir::MLIRContext>();
+    context->getOrLoadDialect<p4mlir::P4Dialect>();
+    auto builder = std::make_unique<mlir::OpBuilder>(context.get());
+    return TestMLIRContext{.builder = std::move(builder), .context = std::move(context)};
+}
+
 } // p4mlir::tests

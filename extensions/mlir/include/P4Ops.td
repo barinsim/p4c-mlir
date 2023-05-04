@@ -27,8 +27,10 @@ def ConstantOp : P4Op<"constant"> {
     ];
 }
 
-def ControlOp : P4Op<"control", [IsolatedFromAbove, NoTerminator]> {
-    let arguments = (ins SymbolNameAttr:$sym_name);
+def ControlOp : P4Op<"control", [SymbolTable, IsolatedFromAbove, NoTerminator]> {
+    let arguments = (ins SymbolNameAttr:$sym_name,
+                       TypeAttrOf<FunctionType>:$apply_type,
+                       TypeAttrOf<FunctionType>:$constructor_type);
     let regions = (region SizedRegion<1>:$body);
 
     let hasCustomAssemblyFormat = 1;

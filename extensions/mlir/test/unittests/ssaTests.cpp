@@ -13,9 +13,7 @@
 
 namespace p4mlir::tests {
 
-
 class SSAInfo : public Test::P4CTest { };
-
 
 TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action_1) {
     std::string src = P4_SOURCE(R"(

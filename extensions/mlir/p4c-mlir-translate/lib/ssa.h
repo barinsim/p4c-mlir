@@ -21,6 +21,7 @@
 
 #include "cfgBuilder.h"
 #include "domTree.h"
+#include "utils.h"
 
 
 namespace p4mlir {
@@ -180,8 +181,8 @@ class SSAInfo
 
  public:
     // Calculates SSA form. Determines phi nodes positions and numbers P4 references of SSA values.
-    // 'context' is used to take apply parameters of the outer block into account, can be null.
-    SSAInfo(const IR::IApply* context, std::pair<const IR::Node*, const BasicBlock*> cfg,
+    // 'context' is used to take apply/ctr parameters of the outer block into account, can be empty.
+    SSAInfo(BlockContext context, std::pair<const IR::Node*, const BasicBlock*> cfg,
             const P4::ReferenceMap* refMap, const P4::TypeMap* typeMap);
 
     // Returns calculated phi nodes info for block 'bb'.

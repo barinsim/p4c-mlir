@@ -1,14 +1,22 @@
 #ifndef BACKENDS_MLIR_TESTS_COMMON_H_
 #define BACKENDS_MLIR_TESTS_COMMON_H_
 
+
 #include <string>
 
 #include "cfgBuilder.h"
+#include "P4Dialect.h"
+
+#include "frontends/common/parseInput.h"
+#include "frontends/common/resolveReferences/referenceMap.h"
+#include "frontends/common/resolveReferences/resolveReferences.h"
+#include "frontends/p4/typeMap.h"
+
 #include "lib/ordered_map.h"
 #include "lib/ordered_set.h"
 
-#include "frontends/common/resolveReferences/referenceMap.h"
-#include "frontends/p4/typeMap.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Builders.h"
 
 namespace p4mlir::tests {
 
@@ -20,7 +28,7 @@ BasicBlock* getByName(const std::map<const IR::Node*, BasicBlock*>&, const std::
 BasicBlock* getByStmtString(BasicBlock*, const std::string&);
 
 // Converts container of IR::IDeclaration to unordered set of names of these declarations.
-// Names withing 'decls' must be unique.
+// Names within 'decls' must be unique.
 template <typename T>
 std::unordered_set<cstring> names(T decls) {
     std::unordered_set<cstring> res;
@@ -88,6 +96,28 @@ class GatherStmtSymbols : public Inspector
         throw std::domain_error("Not implemented");
     }
 };
+
+// Convenience struct to hold output of `parseP4ForTests()`
+struct ParseOutput {
+    const IR::P4Program* ast = nullptr;
+    const P4::TypeMap* typeMap = nullptr;
+    const P4::ReferenceMap* refMap = nullptr;
+
+    operator bool() const { return ast && typeMap && refMap; }
+};
+
+// Given P4 program as a string 'p4string',
+// attempts to parse, type infer/check and create reference map
+ParseOutput parseP4ForTests(const std::string& p4string);
+
+// RAII wrapper to hold MLIR builder and context
+struct TestMLIRContext {
+    std::unique_ptr<mlir::OpBuilder> builder;
+    std::unique_ptr<mlir::MLIRContext> context;
+};
+
+// Creates OpBuilder initialized by a MLIRContext with a P4 dialect registered
+TestMLIRContext createMLIRContext();
 
 } // p4mlir::tests
 

@@ -25,6 +25,7 @@
 
 #include "cfgBuilder.h"
 #include "ssa.h"
+#include "utils.h"
 
 #include "P4Dialect.h"
 #include "P4Ops.h"
@@ -104,6 +105,15 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
     // Does not have to exist (e.g. action outside a control block)
     std::optional<mlir::Value> selfValue;
 
+    // Represents the enclosing control/parser block of the current CFG.
+    // Can be 'empty'
+    BlockContext context;
+
+    // Stores a fully qualified symbols for all P4 AST nodes that can be referenced by
+    // an MLIR symbol. All symbol references in P4 dialect are assumed to be fully qualified within
+    // the parent ModuleOp
+    const FullyQualifiedSymbols& symbols;
+
  public:
     MLIRGenImplCFG(mlir::OpBuilder &builder_,
                    const ordered_map<const BasicBlock *, mlir::Block *> &blocksMapping_,
@@ -111,7 +121,9 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
                    const SSAInfo& ssaInfo_,
                    std::map<SSARefType, mlir::Value>& ssaRefToValue_,
                    ordered_set<const IR::IDeclaration*> members_,
-                   std::optional<mlir::Value> selfValue_)
+                   std::optional<mlir::Value> selfValue_,
+                   BlockContext context_,
+                   const FullyQualifiedSymbols& symbols_)
         : builder(builder_),
           blocksMapping(blocksMapping_),
           typeMap(typeMap_),
@@ -119,7 +131,9 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
           ssaInfo(ssaInfo_),
           ssaRefToValue(ssaRefToValue_),
           members(members_),
-          selfValue(selfValue_) {
+          selfValue(selfValue_),
+          context(context_),
+          symbols(symbols_) {
         CHECK_NULL(typeMap, refMap);
     }
 
@@ -198,10 +212,13 @@ class MLIRGenImpl : public Inspector
     // Control Flow Graph for all of the P4 constructs representable by a CFG
     const CFGBuilder::CFGType& cfg;
 
+    // See 'symbols' in 'MLIRGenImplCFG'
+    const FullyQualifiedSymbols& symbols;
+
  public:
-    MLIRGenImpl(mlir::OpBuilder &builder_, P4::TypeMap *typeMap_,
-                P4::ReferenceMap *refMap_, const CFGBuilder::CFGType &cfg_)
-        : builder(builder_), typeMap(typeMap_), refMap(refMap_), cfg(cfg_) {
+    MLIRGenImpl(mlir::OpBuilder &builder_, P4::TypeMap *typeMap_, P4::ReferenceMap *refMap_,
+                const CFGBuilder::CFGType &cfg_, const FullyQualifiedSymbols &symbols_)
+        : builder(builder_), typeMap(typeMap_), refMap(refMap_), cfg(cfg_), symbols(symbols_) {
         CHECK_NULL(typeMap, refMap);
     }
 
@@ -216,7 +233,7 @@ class MLIRGenImpl : public Inspector
 
     // Generates MLIR for CFG of 'decl', MLIR blocks are inserted into 'targetRegion'.
     // CFG must be accessible through `cfg['decl']`
-    void genMLIRFromCFG(const IR::Node* decl, mlir::Region& targetRegion);
+    void genMLIRFromCFG(BlockContext context, const IR::Node* decl, mlir::Region& targetRegion);
 
 };
 
@@ -227,11 +244,13 @@ class MLIRGen : public PassManager
         auto* refMap = new P4::ReferenceMap();
         auto* typeMap = new P4::TypeMap();
         auto* cfg = new CFGBuilder::CFGType();
+        auto* symbols = new FullyQualifiedSymbols();
         passes.push_back(new P4::ResolveReferences(refMap));
         passes.push_back(new P4::TypeInference(refMap, typeMap, false, true));
         passes.push_back(new P4::TypeChecking(refMap, typeMap, true));
         passes.push_back(new CFGBuilder(*cfg));
-        passes.push_back(new MLIRGenImpl(builder, typeMap, refMap, *cfg));
+        passes.push_back(new MakeFullyQualifiedSymbols(builder, *symbols));
+        passes.push_back(new MLIRGenImpl(builder, typeMap, refMap, *cfg, *symbols));
     }
 };
 

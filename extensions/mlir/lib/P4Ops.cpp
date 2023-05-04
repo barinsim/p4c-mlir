@@ -7,6 +7,7 @@
 #include "mlir/IR/SymbolTable.h"
 #include "mlir/IR/DialectImplementation.h"
 #include "mlir/IR/FunctionImplementation.h"
+#include "mlir/IR/BuiltinOps.h"
 
 #include "P4OpsEnumAttr.cpp.inc"
 #include "P4OpsAttr.cpp.inc"
@@ -16,6 +17,37 @@
 
 namespace p4mlir {
 
+namespace {
+
+// Convenience function to build ops with 'FunctionOpInterface' trait
+template <typename OpType>
+void buildFuncLikeOp(mlir::OpBuilder &builder, mlir::OperationState &state, llvm::StringRef name,
+                     mlir::FunctionType type, llvm::ArrayRef<mlir::NamedAttribute> attrs,
+                     llvm::ArrayRef<mlir::DictionaryAttr> argAttrs) {
+    state.addAttribute(mlir::SymbolTable::getSymbolAttrName(), builder.getStringAttr(name));
+    state.addAttribute(OpType::getFunctionTypeAttrName(state.name), mlir::TypeAttr::get(type));
+    state.attributes.append(attrs.begin(), attrs.end());
+    state.addRegion();
+
+    if (argAttrs.empty()) {
+        return;
+    }
+    assert(type.getNumInputs() == argAttrs.size());
+    mlir::function_interface_impl::addArgAndResultAttrs(builder, state, argAttrs, std::nullopt,
+                                                        OpType::getArgAttrsAttrName(state.name),
+                                                        OpType::getResAttrsAttrName(state.name));
+}
+
+// Find the closes parent ModuleOp, starting from 'from'
+mlir::ModuleOp getParentModule(Operation* from) {
+    auto moduleOp = from->getParentOfType<mlir::ModuleOp>();
+    if (!moduleOp) {
+        from->emitOpError("could not find parent mlir::ModuleOp");
+    }
+    return moduleOp;
+}
+
+} // namespace
 
 mlir::LogicalResult ConstantOp::verify() {
     if (getValueAttr().getType() == getResult().getType()) {
@@ -50,18 +82,28 @@ void ControlOp::print(mlir::OpAsmPrinter &printer) {
 
     printer << ' ';
     printer.printSymbolName(funcName);
-    printer << '(';
-    auto args = getBody().getArguments();
-    if (!args.empty()) {
-        std::for_each(args.begin(), args.end() - 1, [&](auto arg) {
-            printer.printRegionArgument(arg);
-            printer.getStream() << ", ";
-        });
-        printer.printRegionArgument(args.back());
-    }
-    printer << ')';
-    printer << ' ';
 
+    auto printArgs = [&](auto first, auto end) {
+        printer << '(';
+        while (first != end) {
+            printer.printRegionArgument(*first);
+            ++first;
+            if (first != end) {
+                printer.getStream() << ", ";
+            }
+        }
+        printer << ')';
+    };
+
+    // Print apply arguments and optionally constructor arguments
+    auto args = getBody().getArguments();
+    std::size_t applyArgsCnt = getApplyType().getInputs().size();
+    printArgs(args.begin(), args.begin() + applyArgsCnt);
+    if (args.begin() + applyArgsCnt != args.end()) {
+        printArgs(args.begin() + applyArgsCnt, args.end());
+    }
+
+    printer << ' ';
     printer.printRegion(getBody(), false, true);
 }
 
@@ -87,28 +129,6 @@ mlir::ParseResult ExternOp::parse(mlir::OpAsmParser &parser, mlir::OperationStat
     return mlir::failure();
 }
 
-namespace {
-
-template <typename OpType>
-void buildFuncLikeOp(mlir::OpBuilder &builder, mlir::OperationState &state, llvm::StringRef name,
-                     mlir::FunctionType type, llvm::ArrayRef<mlir::NamedAttribute> attrs,
-                     llvm::ArrayRef<mlir::DictionaryAttr> argAttrs) {
-    state.addAttribute(mlir::SymbolTable::getSymbolAttrName(), builder.getStringAttr(name));
-    state.addAttribute(OpType::getFunctionTypeAttrName(state.name), mlir::TypeAttr::get(type));
-    state.attributes.append(attrs.begin(), attrs.end());
-    state.addRegion();
-
-    if (argAttrs.empty()) {
-        return;
-    }
-    assert(type.getNumInputs() == argAttrs.size());
-    mlir::function_interface_impl::addArgAndResultAttrs(builder, state, argAttrs, std::nullopt,
-                                                        OpType::getArgAttrsAttrName(state.name),
-                                                        OpType::getResAttrsAttrName(state.name));
-}
-
-}
-
 void ActionOp::build(mlir::OpBuilder &builder, mlir::OperationState &state, llvm::StringRef name,
                      mlir::FunctionType type, llvm::ArrayRef<mlir::NamedAttribute> attrs,
                      llvm::ArrayRef<mlir::DictionaryAttr> argAttrs) {
@@ -127,9 +147,12 @@ mlir::ParseResult ControlOp::parse(mlir::OpAsmParser &parser, mlir::OperationSta
 }
 
 mlir::LogicalResult CallOp::verifySymbolUses(::mlir::SymbolTableCollection& symbolTable) {
-    // Verify that the callee symbol is in scope
+    // Verify that the callee symbol is in scope.
+    // Referenced 'callee' symbol is assumed
+    // to be fully qualified within the closest parent module
     auto callee = getCalleeAttr();
-    auto func = symbolTable.lookupNearestSymbolFrom<mlir::FunctionOpInterface>(*this, callee);
+    auto func = symbolTable.lookupNearestSymbolFrom<mlir::FunctionOpInterface>(
+        getParentModule(*this), callee);
     if (!func) {
         return emitOpError() << "'" << callee.getNestedReferences()
                              << "' does not reference a valid callable";
