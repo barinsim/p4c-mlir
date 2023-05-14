@@ -50,7 +50,7 @@ const BasicBlock* BasicBlock::getFalseSuccessor() const {
     return succs.at(1);
 }
 
-void CFGBuilder::end_apply(const IR::Node*) {
+void MakeCFGInfo::end_apply(const IR::Node*) {
     auto isFinal = [](const BasicBlock* bb) {
         return bb->succs.empty();
     };
@@ -68,8 +68,8 @@ void CFGBuilder::end_apply(const IR::Node*) {
         return bb->components.empty();
     };
 
-    for (auto& [decl, entry] : b.callableToCFG) {
-        auto finalBlocks = CFGWalker::collect(entry, isFinal);
+    for (auto& [node, cfg] : cfgInfo) {
+        auto finalBlocks = CFGWalker::collect(cfg.getEntry(), isFinal);
         int modifiedBlocks = 0;
         for (auto* bb : finalBlocks) {
             // TODO: Add other terminators
@@ -82,57 +82,76 @@ void CFGBuilder::end_apply(const IR::Node*) {
                   "There should be at most 1 final block with missing exit statement.");
     }
 
-    for (auto& [decl, entry] : b.callableToCFG) {
-        auto blocks = CFGWalker::collect(entry, isExitBlock);
+    for (auto& [node, cfg] : cfgInfo) {
+        auto blocks = CFGWalker::collect(cfg.getEntry(), isExitBlock);
         std::for_each(blocks.begin(), blocks.end(), [](auto* bb) { bb->succs.clear(); });
     }
 
-    for (auto& [decl, entry] : b.callableToCFG) {
-        entry = CFGWalker::erase(entry, isRedundant);
+    std::vector<std::pair<const IR::Node*, CFG>> toReplace;
+    for (auto& [node, cfg] : cfgInfo) {
+        auto* newEntry = CFGWalker::erase(cfg.getEntry(), isRedundant);
+        toReplace.push_back({node, newEntry});
     }
+    std::for_each(toReplace.begin(), toReplace.end(), [&](auto& kv) {
+        cfgInfo.replace(kv.first, kv.second);
+    });
 }
 
-bool CFGBuilder::preorder(const IR::P4Action* action) {
-    BUG_CHECK(!b.callableToCFG.count(action), "Action already visited");
+bool MakeCFGInfo::preorder(const IR::P4Action* action) {
+    BUG_CHECK(!cfgInfo.contains(action), "Action already visited");
     BasicBlock* entryBlock = new BasicBlock(*Scope::create());
-    b.enterBasicBlock(entryBlock);
-    b.callableToCFG.insert({action, entryBlock});
+    enterBasicBlock(entryBlock);
+    cfgInfo.add(action, entryBlock);
     return true;
 }
 
-bool CFGBuilder::preorder(const IR::P4Control* control) {
-    BUG_CHECK(!b.callableToCFG.count(control), "");
+bool MakeCFGInfo::preorder(const IR::P4Control* control) {
+    BUG_CHECK(!cfgInfo.contains(control), "Control visited twice");
+
+    // Create CFG for actions
     visit(control->controlLocals);
-    BasicBlock* entryBlock = new BasicBlock(*Scope::create());
-    b.enterBasicBlock(entryBlock);
-    b.callableToCFG.insert({control->body, entryBlock});
+
+    // Create CFG for the body of the block (out-of-apply declarations + apply)
+    auto* entryBlock = new BasicBlock(*Scope::create());
+    enterBasicBlock(entryBlock);
+    cfgInfo.add(control, entryBlock);
+
+    // Add the out-of-apply variable locals of the control block into the same CFG as the apply
+    // method
+    std::for_each(control->controlLocals.begin(), control->controlLocals.end(),
+                  [&](const IR::Declaration *decl) {
+                      if (decl->is<IR::Declaration_Variable>()) {
+                          addToCurrent(decl);
+                      }
+                  });
+
     visit(control->body);
     return false;
 }
 
-bool CFGBuilder::preorder(const IR::IfStatement* ifStmt) {
-    b.add(ifStmt);
-    Scope& scope = b.current()->scope;
+bool MakeCFGInfo::preorder(const IR::IfStatement* ifStmt) {
+    addToCurrent(ifStmt);
+    Scope& scope = current()->scope;
     BasicBlock* trueB = new BasicBlock(*Scope::create(&scope));
     BasicBlock* falseB = new BasicBlock(*Scope::create(&scope));
     BasicBlock* afterB = new BasicBlock(scope);
-    b.addSuccessor(trueB);
-    b.addSuccessor(falseB);
-    b.enterBasicBlock(trueB);
+    addSuccessorToCurrent(trueB);
+    addSuccessorToCurrent(falseB);
+    enterBasicBlock(trueB);
     visit(ifStmt->ifTrue);
-    b.addSuccessor(afterB);
-    b.enterBasicBlock(falseB);
+    addSuccessorToCurrent(afterB);
+    enterBasicBlock(falseB);
     if (ifStmt->ifFalse) {
         visit(ifStmt->ifFalse);
     }
-    b.addSuccessor(afterB);
-    b.enterBasicBlock(afterB);
+    addSuccessorToCurrent(afterB);
+    enterBasicBlock(afterB);
     return false;
 }
 
-bool CFGBuilder::preorder(const IR::SwitchStatement* switchStmt) {
-    b.add(switchStmt);
-    BasicBlock* beforeB = b.current();
+bool MakeCFGInfo::preorder(const IR::SwitchStatement* switchStmt) {
+    addToCurrent(switchStmt);
+    BasicBlock* beforeB = current();
     Scope& scope = beforeB->scope;
 
     auto createBlockForEachCase = [&](auto& cases) {
@@ -157,47 +176,47 @@ bool CFGBuilder::preorder(const IR::SwitchStatement* switchStmt) {
     BasicBlock* afterB = new BasicBlock(scope);
     blocks.push_back(afterB);
     for (std::size_t i = 0; i < cases.size(); ++i) {
-        b.enterBasicBlock(beforeB);
-        b.addSuccessor(blocks[i]);
-        b.enterBasicBlock(blocks[i]);
+        enterBasicBlock(beforeB);
+        addSuccessorToCurrent(blocks[i]);
+        enterBasicBlock(blocks[i]);
         if (isFallthrough(cases[i])) {
-            b.addSuccessor(blocks[i + 1]);
+            addSuccessorToCurrent(blocks[i + 1]);
             continue;
         }
         visit(cases[i]);
-        b.addSuccessor(afterB);
+        addSuccessorToCurrent(afterB);
     }
-    b.enterBasicBlock(beforeB);
+    enterBasicBlock(beforeB);
     if (!hasDefault(cases)) {
-        b.addSuccessor(afterB);
+        addSuccessorToCurrent(afterB);
     }
-    b.enterBasicBlock(afterB);
+    enterBasicBlock(afterB);
     return false;
 }
 
-bool CFGBuilder::preorder(const IR::Declaration_Variable* decl) {
+bool MakeCFGInfo::preorder(const IR::Declaration_Variable* decl) {
     if (!findContext<IR::BlockStatement>()) {
         return true;
     }
-    b.add(decl);
-    b.current()->scope.add(decl);
+    addToCurrent(decl);
+    current()->scope.add(decl);
     return true;
 }
 
-void CFGBuilder::Builder::add(const IR::StatOrDecl* item) {
+void MakeCFGInfo::addToCurrent(const IR::StatOrDecl* item) {
     CHECK_NULL(curr, item);
     LOG3("CFGBuilder::add " << DBPrint::Brief << item);
     curr->components.push_back(item);
 }
 
-void CFGBuilder::Builder::addSuccessor(BasicBlock* succ) {
+void MakeCFGInfo::addSuccessorToCurrent(BasicBlock* succ) {
     CHECK_NULL(curr, succ);
     curr->succs.push_back(succ);
 }
 
-void CFGBuilder::Builder::enterBasicBlock(BasicBlock* bb) {
+void MakeCFGInfo::enterBasicBlock(BasicBlock* bb) {
     CHECK_NULL(bb);
-    curr = bb; 
+    curr = bb;
 }
 
 std::string toString(const BasicBlock* bb, int indent) {

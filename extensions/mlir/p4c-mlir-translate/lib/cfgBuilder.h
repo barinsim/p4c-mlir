@@ -58,41 +58,80 @@ struct BasicBlock
 
 std::string toString(const BasicBlock* bb, int indent = 0);
 
-class CFGBuilder : public Inspector 
+// Control flow graph
+class CFG
 {
- public:
-    using CFGType = std::map<const IR::Node*, BasicBlock*>;
+    BasicBlock* entry;
 
  public:
-    // This ctr allows usage within a PassManager where 'cfg' is input further down the pipeline
-    CFGBuilder(CFGType& cfg) : b(cfg) {}
+    CFG(BasicBlock* entry_) : entry(entry_) { CHECK_NULL(entry); }
+    BasicBlock* getEntry() const { return entry; }
+};
 
-    // Relies on the garbage collector
-    CFGBuilder() : b(*(new CFGType())) {}
+// Container of the control flow graphs.
+// Associates CFGs with respective AST nodes
+class CFGInfo
+{
+    ordered_map<const IR::Node*, CFG> data;
 
-    CFGType getCFG() const {
-        return b.callableToCFG;
+ public:
+    // Add CFG 'cfg' and associate it with node 'node'
+    void add(const IR::Node* node, CFG cfg) {
+        CHECK_NULL(node);
+        BUG_CHECK(!data.count(node), "CFG for node already exists");
+        data.insert({node, cfg});
     }
+
+    // Replace CFG that is associated with node 'node' by 'cfg'
+    void replace(const IR::Node* node, CFG cfg) {
+        CHECK_NULL(node);
+        BUG_CHECK(contains(node), "Nothing to replace");
+        data.insert({node, cfg});
+    }
+
+    // Return CFG that is associated with node 'node'
+    CFG get(const IR::Node* node) const {
+        CHECK_NULL(node);
+        BUG_CHECK(data.count(node), "CFG for node does not exist");
+        return data.at(node);
+    }
+
+    // Returns true if there is CFG that is associated with node 'node'
+    bool contains(const IR::Node* node) const {
+        CHECK_NULL(node);
+        return data.count(node);
+    }
+
+    // Returns number of stored CFGs
+    std::size_t size() const { return data.size(); }
+
+    // Returns iterators over the stored data
+    decltype(data.begin()) begin() { return data.begin(); }
+    decltype(data.end()) end() { return data.end(); }
+    decltype(data.cbegin()) begin() const { return data.cbegin(); }
+    decltype(data.cend()) end() const { return data.cend(); }
+};
+
+// Creates control flow graph of all eligible P4 constructs in the program.
+// Eligible P4 constructs:
+//      Control block body (apply + out-of-apply local declarations)
+//      Actions
+class MakeCFGInfo : public Inspector
+{
+    // Output of this pass
+    CFGInfo& cfgInfo;
+
+    // Currently processed basic block
+    BasicBlock* curr = nullptr;
+
+ public:
+    MakeCFGInfo(CFGInfo& cfgInfo_) : cfgInfo(cfgInfo_) {}
 
  private:
-    class Builder 
-    {
-        BasicBlock* curr = nullptr;
-    public:
-        Builder(CFGType& cfg) : callableToCFG(cfg) {}
-        CFGBuilder::CFGType& callableToCFG;
-        BasicBlock* current() { return curr; }
-        void add(const IR::StatOrDecl* item);
-        void addSuccessor(BasicBlock* succ);
-        void enterBasicBlock(BasicBlock* bb);
-    };
-
-    Builder b;
-
-    Visitor::profile_t init_apply(const IR::Node *node) override {
-        b.callableToCFG.clear();
-        return Inspector::init_apply(node);
-    }
+    BasicBlock* current() { return curr; }
+    void addToCurrent(const IR::StatOrDecl* item);
+    void addSuccessorToCurrent(BasicBlock* succ);
+    void enterBasicBlock(BasicBlock* bb);
 
     // Canonicalizes the CFGs:
     //  1. The last statement of a callable is a return statement
@@ -100,14 +139,20 @@ class CFGBuilder : public Inspector
     //  3. There are no empty basic blocks (0 components)
     void end_apply(const IR::Node *) override;
     
-    bool preorder(const IR::P4Action* action) override;
-    bool preorder(const IR::P4Control* control) override;
-    bool preorder(const IR::IfStatement* ifStmt) override;
-    bool preorder(const IR::SwitchStatement* switchStmt) override;
-    bool preorder(const IR::Declaration_Variable* decl) override;
-    bool preorder(const IR::ReturnStatement* ret) override { b.add(ret); return true; }
-    bool preorder(const IR::AssignmentStatement* assign) override { b.add(assign); return true; }
-    bool preorder(const IR::MethodCallStatement* call) override { b.add(call); return true; }
+    bool preorder(const IR::P4Action*) override;
+    bool preorder(const IR::P4Control*) override;
+    bool preorder(const IR::IfStatement*) override;
+    bool preorder(const IR::SwitchStatement*) override;
+    bool preorder(const IR::Declaration_Variable*) override;
+    bool preorder(const IR::ReturnStatement* ret) override { addToCurrent(ret); return true; }
+    bool preorder(const IR::AssignmentStatement *assign) override {
+        addToCurrent(assign);
+        return true;
+    }
+    bool preorder(const IR::MethodCallStatement *call) override {
+        addToCurrent(call);
+        return true;
+    }
 
     bool preorder(const IR::BlockStatement*) override {
         // Should 2 different scopes be in a single basic block?
@@ -121,9 +166,7 @@ class CFGBuilder : public Inspector
     bool preorder(const IR::Attribute*) override { return false; }
     bool preorder(const IR::StructField*) override { return false; }
     bool preorder(const IR::Type_StructLike*) override { return false; }
-    
 };
-
 
 // TODO: reformat with CFGWalker
 class CFGPrinter
@@ -141,8 +184,8 @@ public:
                              std::ostream &os);
 };
 
-
 // Provides static methods for CFG inspecting/modifying
+// TODO: Make these functions work with CFG instead of the entry BasicBlock
 class CFGWalker
 {
  public:

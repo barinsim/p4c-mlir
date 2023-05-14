@@ -170,7 +170,7 @@ mlir::LogicalResult CallOp::verifySymbolUses(::mlir::SymbolTableCollection& symb
 
     // Verify that the result types match the callee
     mlir::TypeRange callResults = getResults().getTypes();
-    mlir::TypeRange funcResults = func.getResultTypes();
+    mlir::TypeRange funcResults = func.getFunctionType().cast<mlir::FunctionType>().getResults();
     if (callResults.size() != funcResults.size()) {
         return emitOpError("incorrect number of results for callee");
     }
