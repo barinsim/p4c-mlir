@@ -4,6 +4,7 @@
 #include "test/gtest/helpers.h"
 #include "frontends/common/parseInput.h"
 #include "common.h"
+
 #include "cfgBuilder.h"
 
 
@@ -128,13 +129,13 @@ testing::AssertionResult fuzzyEq(TextCFG&& a, TextCFG&& b) {
 //  successors: bb^5 bb^6
 #define CFG_EXPECT_FUZZY_EQ(a, b)                                             \
     do {                                                                      \
-        EXPECT_TRUE(fuzzyEq(TextCFG(a), TextCFG(b))); \
+        EXPECT_TRUE(fuzzyEq(TextCFG(a.getEntry()), TextCFG(b))); \
     } while (0)
 
-class CFGBuilder : public Test::P4CTest { };
+class CFGInfo : public Test::P4CTest { };
 
 
-TEST_F(CFGBuilder, Test_multiple_simple_actions) {
+TEST_F(CFGInfo, Test_multiple_simple_actions) {
     std::string src = P4_SOURCE(R"(
         action foo() {
             hdr.f1 = 3;
@@ -158,17 +159,13 @@ TEST_F(CFGBuilder, Test_multiple_simple_actions) {
     auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
     ASSERT_TRUE(pgm && ::errorCount() == 0);
 
-    auto b = new p4mlir::CFGBuilder;
-    pgm->apply(*b);
-    auto all = b->getCFG();
+    p4mlir::CFGInfo cfgInfo;
+    pgm->apply(p4mlir::MakeCFGInfo(cfgInfo));
 
-    ASSERT_EQ(all.size(), (std::size_t)3);
-    auto* cfgFoo = getByName(all, "foo");
-    auto* cfgBar = getByName(all, "bar");
-    auto* cfgBaz = getByName(all, "baz");
-    ASSERT_TRUE(cfgFoo);
-    ASSERT_TRUE(cfgBar);
-    ASSERT_TRUE(cfgBaz);
+    ASSERT_EQ(cfgInfo.size(), (std::size_t)3);
+    auto cfgFoo = getByName(cfgInfo, "foo");
+    auto cfgBar = getByName(cfgInfo, "bar");
+    auto cfgBaz = getByName(cfgInfo, "baz");
 
     CFG_EXPECT_FUZZY_EQ(cfgFoo,
         R"(bb^1
@@ -201,7 +198,7 @@ TEST_F(CFGBuilder, Test_multiple_simple_actions) {
 }
 
 
-TEST_F(CFGBuilder, Test_control_block_with_control_flow) {
+TEST_F(CFGInfo, Test_control_block_with_control_flow) {
     std::string src = P4_SOURCE(R"(
         struct Parsed_packet {}
         struct InControl {}
@@ -287,21 +284,15 @@ TEST_F(CFGBuilder, Test_control_block_with_control_flow) {
     auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
     ASSERT_TRUE(pgm && ::errorCount() == 0);
 
-    auto b = new p4mlir::CFGBuilder;
-    pgm->apply(*b);
-    auto all = b->getCFG();
+    p4mlir::CFGInfo cfgInfo;
+    pgm->apply(p4mlir::MakeCFGInfo(cfgInfo));
 
-    ASSERT_EQ(all.size(), (std::size_t)5);
-    auto* cfgNhop = getByName(all, "Set_nhop");
-    auto cfgSmac = getByName(all, "Set_smac");
-    auto* cfgEmpty = getByName(all, "Empty");
-    auto* cfgAlmostEmpty = getByName(all, "Almost_empty");
-    auto* cfgApply = getByName(all, "");
-    ASSERT_TRUE(cfgNhop);
-    ASSERT_TRUE(cfgSmac);
-    ASSERT_TRUE(cfgEmpty);
-    ASSERT_TRUE(cfgAlmostEmpty);
-    ASSERT_TRUE(cfgApply);
+    ASSERT_EQ(cfgInfo.size(), (std::size_t)5);
+    auto cfgNhop = getByName(cfgInfo, "Set_nhop");
+    auto cfgSmac = getByName(cfgInfo, "Set_smac");
+    auto cfgEmpty = getByName(cfgInfo, "Empty");
+    auto cfgAlmostEmpty = getByName(cfgInfo, "Almost_empty");
+    auto cfgApply = getByName(cfgInfo, "TopPipe");
 
     CFG_EXPECT_FUZZY_EQ(cfgNhop,
         R"(bb^1
@@ -366,6 +357,7 @@ TEST_F(CFGBuilder, Test_control_block_with_control_flow) {
 
     CFG_EXPECT_FUZZY_EQ(cfgApply,
         R"(bb^1
+            IPv4Address nextHop;
             if (hdr.inner.f3 != 0)
             successors: bb^2 bb^3
 
@@ -407,7 +399,7 @@ TEST_F(CFGBuilder, Test_control_block_with_control_flow) {
 }
 
 
-TEST_F(CFGBuilder, Test_switch_statement) {
+TEST_F(CFGInfo, Test_switch_statement) {
     std::string src = P4_SOURCE(R"(
         struct Parsed_packet {}
         control Pipe<H>(inout H headers);
@@ -439,13 +431,11 @@ TEST_F(CFGBuilder, Test_switch_statement) {
     auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
     ASSERT_TRUE(pgm && ::errorCount() == 0);
 
-    auto b = new p4mlir::CFGBuilder;
-    pgm->apply(*b);
-    auto all = b->getCFG();
+    p4mlir::CFGInfo cfgInfo;
+    pgm->apply(p4mlir::MakeCFGInfo(cfgInfo));
 
-    ASSERT_EQ(all.size(), (std::size_t)4);
-    auto* cfgApply = getByName(all, "");
-    ASSERT_TRUE(cfgApply);
+    ASSERT_EQ(cfgInfo.size(), (std::size_t)4);
+    auto cfgApply = getByName(cfgInfo, "TopPipe");
 
     CFG_EXPECT_FUZZY_EQ(cfgApply,
         R"(bb^1
@@ -475,7 +465,7 @@ TEST_F(CFGBuilder, Test_switch_statement) {
 }
 
 
-TEST_F(CFGBuilder, Test_switch_statement_without_default) {
+TEST_F(CFGInfo, Test_switch_statement_without_default) {
     std::string src = P4_SOURCE(R"(
         struct Parsed_packet {}
         control Pipe<H>(inout H headers);
@@ -502,13 +492,11 @@ TEST_F(CFGBuilder, Test_switch_statement_without_default) {
     auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
     ASSERT_TRUE(pgm && ::errorCount() == 0);
 
-    auto b = new p4mlir::CFGBuilder;
-    pgm->apply(*b);
-    auto all = b->getCFG();
+    p4mlir::CFGInfo cfgInfo;
+    pgm->apply(p4mlir::MakeCFGInfo(cfgInfo));
 
-    ASSERT_EQ(all.size(), (std::size_t)4);
-    auto* cfgApply = getByName(all, "");
-    ASSERT_TRUE(cfgApply);
+    ASSERT_EQ(cfgInfo.size(), (std::size_t)4);
+    auto cfgApply = getByName(cfgInfo, "TopPipe");
 
     // Last successor in the list is always the 'none matched'
     // case. Which can be either 'default' or simple fallthrough
@@ -536,7 +524,7 @@ TEST_F(CFGBuilder, Test_switch_statement_without_default) {
 }
 
 
-TEST_F(CFGBuilder, Test_fall_through_switch_statement) {
+TEST_F(CFGInfo, Test_fall_through_switch_statement) {
     std::string src = P4_SOURCE(R"(
         struct Parsed_packet {}
         control Pipe<H>(inout H headers);
@@ -570,13 +558,11 @@ TEST_F(CFGBuilder, Test_fall_through_switch_statement) {
     auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
     ASSERT_TRUE(pgm && ::errorCount() == 0);
 
-    auto b = new p4mlir::CFGBuilder;
-    pgm->apply(*b);
-    auto all = b->getCFG();
+    p4mlir::CFGInfo cfgInfo;
+    pgm->apply(p4mlir::MakeCFGInfo(cfgInfo));
 
-    ASSERT_EQ(all.size(), (std::size_t)4);
-    auto* cfgApply = getByName(all, "");
-    ASSERT_TRUE(cfgApply);
+    ASSERT_EQ(cfgInfo.size(), (std::size_t)4);
+    auto cfgApply = getByName(cfgInfo, "TopPipe");
 
     CFG_EXPECT_FUZZY_EQ(cfgApply,
         R"(bb^1
@@ -608,20 +594,12 @@ TEST_F(CFGBuilder, Test_fall_through_switch_statement) {
 }
 
 
-TEST_F(CFGBuilder, Test_wierd_fall_through_switch_statement) {
+TEST_F(CFGInfo, Test_wierd_fall_through_switch_statement) {
     std::string src = P4_SOURCE(R"(
         struct Parsed_packet {}
         control Pipe<H>(inout H headers);
         package Pipeline<H>(Pipe<H> p);
         control TopPipe(inout Parsed_packet hdr) {
-            action foo1() {}
-            action foo2() {}
-            action foo3() {}
-            table test_table {
-                key = { hdr.f1: exact; }
-                actions = { foo1; foo2; foo3; }
-                size = 1024;
-            }
             apply {
                 switch (test_table.apply().action_run) {
                     foo1 :
@@ -636,13 +614,11 @@ TEST_F(CFGBuilder, Test_wierd_fall_through_switch_statement) {
     auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
     ASSERT_TRUE(pgm && ::errorCount() == 0);
 
-    auto b = new p4mlir::CFGBuilder;
-    pgm->apply(*b);
-    auto all = b->getCFG();
+    p4mlir::CFGInfo cfgInfo;
+    pgm->apply(p4mlir::MakeCFGInfo(cfgInfo));
 
-    ASSERT_EQ(all.size(), (std::size_t)4);
-    auto* cfgApply = getByName(all, "");
-    ASSERT_TRUE(cfgApply);
+    ASSERT_EQ(cfgInfo.size(), (std::size_t)1);
+    auto cfgApply = getByName(cfgInfo, "TopPipe");
 
     CFG_EXPECT_FUZZY_EQ(cfgApply,
         R"(bb^1
@@ -660,7 +636,7 @@ TEST_F(CFGBuilder, Test_wierd_fall_through_switch_statement) {
 }
 
 
-TEST_F(CFGBuilder, Test_wierd_fall_through_switch_statement_without_default) {
+TEST_F(CFGInfo, Test_wierd_fall_through_switch_statement_without_default) {
     std::string src = P4_SOURCE(R"(
         struct Parsed_packet {}
         control Pipe<H>(inout H headers);
@@ -687,13 +663,11 @@ TEST_F(CFGBuilder, Test_wierd_fall_through_switch_statement_without_default) {
     auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
     ASSERT_TRUE(pgm && ::errorCount() == 0);
 
-    auto b = new p4mlir::CFGBuilder;
-    pgm->apply(*b);
-    auto all = b->getCFG();
+    p4mlir::CFGInfo cfgInfo;
+    pgm->apply(p4mlir::MakeCFGInfo(cfgInfo));
 
-    ASSERT_EQ(all.size(), (std::size_t)4);
-    auto* cfgApply = getByName(all, "");
-    ASSERT_TRUE(cfgApply);
+    ASSERT_EQ(cfgInfo.size(), (std::size_t)4);
+    auto cfgApply = getByName(cfgInfo, "TopPipe");
 
     CFG_EXPECT_FUZZY_EQ(cfgApply,
         R"(bb^1
@@ -711,7 +685,7 @@ TEST_F(CFGBuilder, Test_wierd_fall_through_switch_statement_without_default) {
 }
 
 
-TEST_F(CFGBuilder, Test_empty_if_statement) {
+TEST_F(CFGInfo, Test_empty_if_statement) {
     std::string src = P4_SOURCE(R"(
         action foo() {
             if (true) {
@@ -725,12 +699,11 @@ TEST_F(CFGBuilder, Test_empty_if_statement) {
     auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
     ASSERT_TRUE(pgm && ::errorCount() == 0);
 
-    auto b = new p4mlir::CFGBuilder;
-    pgm->apply(*b);
-    auto all = b->getCFG();
+    p4mlir::CFGInfo cfgInfo;
+    pgm->apply(p4mlir::MakeCFGInfo(cfgInfo));
 
-    ASSERT_EQ(all.size(), (std::size_t)1);
-    auto* cfgFoo = getByName(all, "foo");
+    ASSERT_EQ(cfgInfo.size(), (std::size_t)1);
+    auto cfgFoo = getByName(cfgInfo, "foo");
 
     CFG_EXPECT_FUZZY_EQ(cfgFoo,
         R"(bb^1
@@ -744,7 +717,7 @@ TEST_F(CFGBuilder, Test_empty_if_statement) {
 }
 
 
-TEST_F(CFGBuilder, Test_visibility_of_variables_within_a_scope) {
+TEST_F(CFGInfo, Test_visibility_of_variables_within_a_scope) {
     std::string src = P4_SOURCE(R"(
         action foo() {
             // bb1
@@ -783,12 +756,11 @@ TEST_F(CFGBuilder, Test_visibility_of_variables_within_a_scope) {
     auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
     ASSERT_TRUE(pgm && ::errorCount() == 0);
 
-    auto b = new p4mlir::CFGBuilder;
-    pgm->apply(*b);
-    auto all = b->getCFG();
+    p4mlir::CFGInfo cfgInfo;
+    pgm->apply(p4mlir::MakeCFGInfo(cfgInfo));
 
-    ASSERT_EQ(all.size(), (std::size_t)1);
-    auto* cfgFoo = getByName(all, "foo");
+    ASSERT_EQ(cfgInfo.size(), (std::size_t)1);
+    auto cfgFoo = getByName(cfgInfo, "foo");
     auto* bb1 = getByStmtString(cfgFoo, "int<16> f1;");
     auto* bb2 = getByStmtString(cfgFoo, "int<16> f3;");
     auto* bb3 = getByStmtString(cfgFoo, "f2 = 3;");
@@ -816,7 +788,7 @@ TEST_F(CFGBuilder, Test_visibility_of_variables_within_a_scope) {
 }
 
 
-// TEST_F(CFGBuilder, Test_switch_statement_with_empty_cases) {
+// TEST_F(CFGInfo, Test_switch_statement_with_empty_cases) {
 //     std::string src = P4_SOURCE(R"(
 //         struct Parsed_packet {}
 //         control Pipe<H>(inout H headers);
@@ -848,7 +820,7 @@ TEST_F(CFGBuilder, Test_visibility_of_variables_within_a_scope) {
 //     auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
 //     ASSERT_TRUE(pgm && ::errorCount() == 0);
 
-//     auto b = new p4mlir::CFGBuilder;
+//     auto b = new p4mlir::CFGInfo;
 //     pgm->apply(*b);
 //     auto all = b->getCFG();
 

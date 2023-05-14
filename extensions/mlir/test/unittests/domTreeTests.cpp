@@ -44,13 +44,12 @@ TEST_F(DomTree, Test_action_with_control_flow) {
     auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
     ASSERT_TRUE(pgm && ::errorCount() == 0);
 
-    auto b = new p4mlir::CFGBuilder;
+    p4mlir::CFGInfo cfgInfo;
+    auto b = new p4mlir::MakeCFGInfo(cfgInfo);
     pgm->apply(*b);
-    auto all = b->getCFG();
 
-    ASSERT_EQ(all.size(), (std::size_t)1);
-    auto* cfgFoo = all.begin()->second;
-    ASSERT_TRUE(cfgFoo);
+    ASSERT_EQ(cfgInfo.size(), (std::size_t)1);
+    p4mlir::CFG cfgFoo = cfgInfo.begin()->second;
 
     p4mlir::BasicBlock* bb1 = getByStmtString(cfgFoo, "label = 1;");
     p4mlir::BasicBlock* bb2 = getByStmtString(cfgFoo, "label = 2;");
@@ -59,7 +58,7 @@ TEST_F(DomTree, Test_action_with_control_flow) {
     p4mlir::BasicBlock* bb5 = getByStmtString(cfgFoo, "label = 5;");
     p4mlir::BasicBlock* bb6 = getByStmtString(cfgFoo, "label = 6;");
 
-    p4mlir::DomTree* domTree = p4mlir::DomTree::fromEntryBlock(cfgFoo);
+    p4mlir::DomTree* domTree = p4mlir::DomTree::fromEntryBlock(cfgFoo.getEntry());
 
     EXPECT_EQ(domTree->immediateDom(bb1), nullptr);
     EXPECT_EQ(domTree->immediateDom(bb2), bb1);
@@ -122,13 +121,12 @@ TEST_F(DomTree, Test_action_with_complex_control_flow) {
     auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
     ASSERT_TRUE(pgm && ::errorCount() == 0);
 
-    auto b = new p4mlir::CFGBuilder;
+    p4mlir::CFGInfo cfgInfo;
+    auto b = new p4mlir::MakeCFGInfo(cfgInfo);
     pgm->apply(*b);
-    auto all = b->getCFG();
 
-    ASSERT_EQ(all.size(), (std::size_t)1);
-    auto* cfgFoo = all.begin()->second;
-    ASSERT_TRUE(cfgFoo);
+    ASSERT_EQ(cfgInfo.size(), (std::size_t)1);
+    p4mlir::CFG cfgFoo = cfgInfo.begin()->second;
 
     p4mlir::BasicBlock* bb1 = getByStmtString(cfgFoo, "label = 1;");
     p4mlir::BasicBlock* bb2 = getByStmtString(cfgFoo, "label = 2;");
@@ -139,7 +137,7 @@ TEST_F(DomTree, Test_action_with_complex_control_flow) {
     p4mlir::BasicBlock* bb7 = getByStmtString(cfgFoo, "label = 7;");
     p4mlir::BasicBlock* bb8 = getByStmtString(cfgFoo, "label = 8;");
 
-    p4mlir::DomTree* domTree = p4mlir::DomTree::fromEntryBlock(cfgFoo);
+    p4mlir::DomTree* domTree = p4mlir::DomTree::fromEntryBlock(cfgFoo.getEntry());
 
     EXPECT_EQ(domTree->immediateDom(bb1), nullptr);
     EXPECT_EQ(domTree->immediateDom(bb2), bb1);
@@ -227,13 +225,12 @@ TEST_F(DomTree, Test_fall_through_switch_statement) {
     auto* pgm = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
     ASSERT_TRUE(pgm && ::errorCount() == 0);
 
-    auto b = new p4mlir::CFGBuilder;
+    p4mlir::CFGInfo cfgInfo;
+    auto b = new p4mlir::MakeCFGInfo(cfgInfo);
     pgm->apply(*b);
-    auto all = b->getCFG();
 
-    ASSERT_EQ(all.size(), (std::size_t)4);
-    auto* cfgApply = getByName(all, "");
-    ASSERT_TRUE(cfgApply);
+    ASSERT_EQ(cfgInfo.size(), (std::size_t)4);
+    auto cfgApply = getByName(cfgInfo, "TopPipe");
 
     p4mlir::BasicBlock* bb1 = getByStmtString(cfgApply, "label = 1;");
     p4mlir::BasicBlock* bb2 = getByStmtString(cfgApply, "label = 2;");
@@ -245,7 +242,7 @@ TEST_F(DomTree, Test_fall_through_switch_statement) {
     p4mlir::BasicBlock* bb8 = getByStmtString(cfgApply, "label = 8;");
     p4mlir::BasicBlock* bb9 = getByStmtString(cfgApply, "label = 9;");
 
-    p4mlir::DomTree* domTree = p4mlir::DomTree::fromEntryBlock(cfgApply);
+    p4mlir::DomTree* domTree = p4mlir::DomTree::fromEntryBlock(cfgApply.getEntry());
 
     EXPECT_EQ(domTree->immediateDom(bb1), nullptr);
     EXPECT_EQ(domTree->immediateDom(bb2), bb1);

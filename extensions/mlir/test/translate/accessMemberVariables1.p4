@@ -35,89 +35,86 @@ control Pipe() {
     }
 }
 
-// CHECK: p4.control @Pipe() {
-
-    // CHECK-NEXT: p4.member_decl @var1 : si16
-    // CHECK-NEXT: p4.member_decl @hdr : !p4.header<"MyHeader">
-
-    // CHECK-NEXT: p4.action @foo(%arg0: !p4.ref<si16>) {
-        // CHECK-NEXT: %0 = p4.self : !p4.ref<!p4.control<"Pipe">>
-        // CHECK-NEXT: %1 = p4.get_member_ref(%0) "var1" : !p4.ref<!p4.control<"Pipe">> -> !p4.ref<si16>
-        // CHECK-NEXT: %2 = p4.load(%1) : !p4.ref<si16> -> si16
-        // CHECK-NEXT: %3 = p4.copy(%2) : si16 -> si16
-        // CHECK-NEXT: %4 = p4.constant 4 : si16
-        // CHECK-NEXT: %5 = p4.cast(%4) : si16 -> si16
-        // CHECK-NEXT: %6 = p4.copy(%5) : si16 -> si16
-        // CHECK-NEXT: %7 = p4.get_member_ref(%0) "var1" : !p4.ref<!p4.control<"Pipe">> -> !p4.ref<si16>
-        // CHECK-NEXT: p4.store(%7, %6) : (!p4.ref<si16>, si16) -> ()
-        // CHECK-NEXT: %8 = p4.get_member_ref(%0) "var1" : !p4.ref<!p4.control<"Pipe">> -> !p4.ref<si16>
-        // CHECK-NEXT: %9 = p4.load(%8) : !p4.ref<si16> -> si16
-        // CHECK-NEXT: %10 = p4.constant 1 : si16
-        // CHECK-NEXT: %11 = p4.add(%9, %10) : (si16, si16) -> si16
-        // CHECK-NEXT: p4.store(%arg0, %11) : (!p4.ref<si16>, si16) -> ()
-        // CHECK-NEXT: %12 = p4.get_member_ref(%0) "var1" : !p4.ref<!p4.control<"Pipe">> -> !p4.ref<si16>
-        // CHECK-NEXT: %13 = p4.load(%arg0) : !p4.ref<si16> -> si16
-        // CHECK-NEXT: p4.store(%12, %13) : (!p4.ref<si16>, si16) -> ()
-        // CHECK-NEXT: p4.return
-    // CHECK-NEXT: }
-
-    // CHECK-NEXT: p4.member_decl @var2 : si16
-
-    // CHECK-NEXT: p4.apply {
-        // CHECK-NEXT: %0 = p4.self : !p4.ref<!p4.control<"Pipe">>
-        // CHECK-NEXT: %1 = p4.get_member_ref(%0) "var1" : !p4.ref<!p4.control<"Pipe">> -> !p4.ref<si16>
-        // CHECK-NEXT: %2 = p4.constant 3 : si16
-        // CHECK-NEXT: %3 = p4.cast(%2) : si16 -> si16
-        // CHECK-NEXT: p4.store(%1, %3) : (!p4.ref<si16>, si16) -> ()
-        // CHECK-NEXT: %4 = p4.constant 2 : si16
-        // CHECK-NEXT: %5 = p4.cast(%4) : si16 -> si16
-        // CHECK-NEXT: %6 = p4.copy(%5) : si16 -> si16
-        // CHECK-NEXT: %7 = p4.uninitialized : !p4.header<"MyHeader">
-        // CHECK-NEXT: %8 = p4.alloc : !p4.ref<!p4.header<"MyHeader">>
-        // CHECK-NEXT: p4.store(%8, %7) : (!p4.ref<!p4.header<"MyHeader">>, !p4.header<"MyHeader">) -> ()
-        // CHECK-NEXT: %9 = p4.get_member_ref(%0) "var1" : !p4.ref<!p4.control<"Pipe">> -> !p4.ref<si16>
-        // CHECK-NEXT: %10 = p4.load(%9) : !p4.ref<si16> -> si16
-        // CHECK-NEXT: %11 = p4.constant 3 : si64
-        // CHECK-NEXT: %12 = p4.cast(%11) : si64 -> si16
-        // CHECK-NEXT: %13 = p4.cmp(%10, %12) eq : (si16, si16) -> i1
-        // CHECK-NEXT: cf.cond_br %13, ^bb1, ^bb2
-
-            // CHECK: ^bb1:
-            // CHECK-NEXT: %14 = p4.constant 3 : si16
-            // CHECK-NEXT: %15 = p4.cast(%14) : si16 -> si16
-            // CHECK-NEXT: %16 = p4.copy(%15) : si16 -> si16
-            // CHECK-NEXT: %17 = p4.get_member_ref(%0) "var1" : !p4.ref<!p4.control<"Pipe">> -> !p4.ref<si16>
-            // CHECK-NEXT: p4.store(%17, %6) : (!p4.ref<si16>, si16) -> ()
-            // CHECK-NEXT: cf.br ^bb3(%6 : si16)
-
-            // CHECK: ^bb2:
-            // CHECK-NEXT: %18 = p4.get_member_ref(%0) "var1" : !p4.ref<!p4.control<"Pipe">> -> !p4.ref<si16>
-            // CHECK-NEXT: %19 = p4.load(%18) : !p4.ref<si16> -> si16
-            // CHECK-NEXT: %20 = p4.copy(%19) : si16 -> si16
-            // CHECK-NEXT: cf.br ^bb3(%20 : si16)
-
-        // CHECK-NEXT: ^bb3(%21: si16):
-        // CHECK-NEXT: %22 = p4.get_member_ref(%0) "var1" : !p4.ref<!p4.control<"Pipe">> -> !p4.ref<si16>
-        // CHECK-NEXT: %23 = p4.get_member_ref(%0) "var2" : !p4.ref<!p4.control<"Pipe">> -> !p4.ref<si16>
-        // CHECK-NEXT: %24 = p4.load(%23) : !p4.ref<si16> -> si16
-        // CHECK-NEXT: %25 = p4.get_member_ref(%0) "var1" : !p4.ref<!p4.control<"Pipe">> -> !p4.ref<si16>
-        // CHECK-NEXT: %26 = p4.load(%25) : !p4.ref<si16> -> si16
-        // CHECK-NEXT: %27 = p4.add(%24, %26) : (si16, si16) -> si16
-        // CHECK-NEXT: p4.store(%22, %27) : (!p4.ref<si16>, si16) -> ()
-        // CHECK-NEXT: %28 = p4.get_member_ref(%0) "hdr" : !p4.ref<!p4.control<"Pipe">> -> !p4.ref<!p4.header<"MyHeader">>
-        // CHECK-NEXT: %29 = p4.load(%28) : !p4.ref<!p4.header<"MyHeader">> -> !p4.header<"MyHeader">
-        // CHECK-NEXT: p4.store(%8, %29) : (!p4.ref<!p4.header<"MyHeader">>, !p4.header<"MyHeader">) -> ()
-        // CHECK-NEXT: %30 = p4.get_member_ref(%0) "hdr" : !p4.ref<!p4.control<"Pipe">> -> !p4.ref<!p4.header<"MyHeader">>
-        // CHECK-NEXT: %31 = p4.load(%8) : !p4.ref<!p4.header<"MyHeader">> -> !p4.header<"MyHeader">
-        // CHECK-NEXT: p4.store(%30, %31) : (!p4.ref<!p4.header<"MyHeader">>, !p4.header<"MyHeader">) -> ()
-        // CHECK-NEXT: %32 = p4.get_member_ref(%0) "hdr" : !p4.ref<!p4.control<"Pipe">> -> !p4.ref<!p4.header<"MyHeader">>
-        // CHECK-NEXT: %33 = p4.get_member_ref(%32) "f1" : !p4.ref<!p4.header<"MyHeader">> -> !p4.ref<si16>
-        // CHECK-NEXT: %34 = p4.constant 10 : si16
-        // CHECK-NEXT: %35 = p4.cast(%34) : si16 -> si16
-        // CHECK-NEXT: p4.store(%33, %35) : (!p4.ref<si16>, si16) -> ()
-        // CHECK-NEXT: p4.return
-    // CHECK-NEXT: }
-
+// CHECK: p4.header @MyHeader {
+// CHECK-NEXT: p4.member_decl @f1 : si16
+// CHECK-NEXT: p4.valid_bit_decl @__valid : i1
 // CHECK-NEXT: }
+
+// CHECK-NEXT: p4.control @Pipe() {
+
+// CHECK-NEXT: p4.action @foo(%arg0: !p4.ref<si16>, %arg1: !p4.ref<!p4.header<"MyHeader">>, %arg2: !p4.ref<si16>) {
+// CHECK-NEXT: %0 = p4.self : !p4.ref<!p4.control<"Pipe">>
+// CHECK-NEXT: %1 = p4.load(%arg0) : !p4.ref<si16> -> si16
+// CHECK-NEXT: %2 = p4.copy(%1) : si16 -> si16
+// CHECK-NEXT: %3 = p4.constant 4 : si16
+// CHECK-NEXT: %4 = p4.cast(%3) : si16 -> si16
+// CHECK-NEXT: %5 = p4.copy(%4) : si16 -> si16
+// CHECK-NEXT: p4.store(%arg0, %5) : (!p4.ref<si16>, si16) -> ()
+// CHECK-NEXT: %6 = p4.load(%arg0) : !p4.ref<si16> -> si16
+// CHECK-NEXT: %7 = p4.constant 1 : si16
+// CHECK-NEXT: %8 = p4.add(%6, %7) : (si16, si16) -> si16
+// CHECK-NEXT: p4.store(%arg2, %8) : (!p4.ref<si16>, si16) -> ()
+// CHECK-NEXT: %9 = p4.load(%arg2) : !p4.ref<si16> -> si16
+// CHECK-NEXT: p4.store(%arg0, %9) : (!p4.ref<si16>, si16) -> ()
+// CHECK-NEXT: p4.return
+// CHECK-NEXT: }
+
+// CHECK-NEXT: p4.apply {
+// CHECK-NEXT: %0 = p4.self : !p4.ref<!p4.control<"Pipe">>
+// CHECK-NEXT: %1 = p4.uninitialized : si16
+// CHECK-NEXT: %2 = p4.alloc : !p4.ref<si16>
+// CHECK-NEXT: p4.store(%2, %1) : (!p4.ref<si16>, si16) -> ()
+// CHECK-NEXT: %3 = p4.uninitialized : !p4.header<"MyHeader">
+// CHECK-NEXT: %4 = p4.alloc : !p4.ref<!p4.header<"MyHeader">>
+// CHECK-NEXT: p4.store(%4, %3) : (!p4.ref<!p4.header<"MyHeader">>, !p4.header<"MyHeader">) -> ()
+// CHECK-NEXT: %5 = p4.uninitialized : si16
+// CHECK-NEXT: %6 = p4.alloc : !p4.ref<si16>
+// CHECK-NEXT: p4.store(%6, %5) : (!p4.ref<si16>, si16) -> ()
+// CHECK-NEXT: %7 = p4.constant 3 : si16
+// CHECK-NEXT: %8 = p4.cast(%7) : si16 -> si16
+// CHECK-NEXT: p4.store(%2, %8) : (!p4.ref<si16>, si16) -> ()
+// CHECK-NEXT: %9 = p4.constant 2 : si16
+// CHECK-NEXT: %10 = p4.cast(%9) : si16 -> si16
+// CHECK-NEXT: %11 = p4.copy(%10) : si16 -> si16
+// CHECK-NEXT: %12 = p4.uninitialized : !p4.header<"MyHeader">
+// CHECK-NEXT: %13 = p4.alloc : !p4.ref<!p4.header<"MyHeader">>
+// CHECK-NEXT: p4.store(%13, %12) : (!p4.ref<!p4.header<"MyHeader">>, !p4.header<"MyHeader">) -> ()
+// CHECK-NEXT: %14 = p4.load(%2) : !p4.ref<si16> -> si16
+// CHECK-NEXT: %15 = p4.constant 3 : si64
+// CHECK-NEXT: %16 = p4.cast(%15) : si64 -> si16
+// CHECK-NEXT: %17 = p4.cmp(%14, %16) eq : (si16, si16) -> i1
+// CHECK-NEXT: cf.cond_br %17, ^bb1, ^bb2
+
+    // CHECK-NEXT: ^bb1:  // pred: ^bb0
+    // CHECK-NEXT: %18 = p4.constant 3 : si16
+    // CHECK-NEXT: %19 = p4.cast(%18) : si16 -> si16
+    // CHECK-NEXT: %20 = p4.copy(%19) : si16 -> si16
+    // CHECK-NEXT: p4.store(%2, %11) : (!p4.ref<si16>, si16) -> ()
+    // CHECK-NEXT: cf.br ^bb3(%11 : si16)
+
+    // CHECK-NEXT: ^bb2:  // pred: ^bb0
+    // CHECK-NEXT: %21 = p4.load(%2) : !p4.ref<si16> -> si16
+    // CHECK-NEXT: %22 = p4.copy(%21) : si16 -> si16
+    // CHECK-NEXT: cf.br ^bb3(%22 : si16)
+
+// CHECK-NEXT: ^bb3(%23: si16):  // 2 preds: ^bb1, ^bb2
+// CHECK-NEXT: %24 = p4.load(%6) : !p4.ref<si16> -> si16
+// CHECK-NEXT: %25 = p4.load(%2) : !p4.ref<si16> -> si16
+// CHECK-NEXT: %26 = p4.add(%24, %25) : (si16, si16) -> si16
+// CHECK-NEXT: p4.store(%2, %26) : (!p4.ref<si16>, si16) -> ()
+// CHECK-NEXT: %27 = p4.load(%4) : !p4.ref<!p4.header<"MyHeader">> -> !p4.header<"MyHeader">
+// CHECK-NEXT: p4.store(%13, %27) : (!p4.ref<!p4.header<"MyHeader">>, !p4.header<"MyHeader">) -> ()
+// CHECK-NEXT: %28 = p4.load(%13) : !p4.ref<!p4.header<"MyHeader">> -> !p4.header<"MyHeader">
+// CHECK-NEXT: p4.store(%4, %28) : (!p4.ref<!p4.header<"MyHeader">>, !p4.header<"MyHeader">) -> ()
+// CHECK-NEXT: %29 = p4.get_member_ref(%4) "f1" : !p4.ref<!p4.header<"MyHeader">> -> !p4.ref<si16>
+// CHECK-NEXT: %30 = p4.constant 10 : si16
+// CHECK-NEXT: %31 = p4.cast(%30) : si16 -> si16
+// CHECK-NEXT: p4.store(%29, %31) : (!p4.ref<si16>, si16) -> ()
+// CHECK-NEXT: p4.return
+// CHECK-NEXT: }
+// CHECK-NEXT: }
+// CHECK-NEXT: }
+
+
 
 

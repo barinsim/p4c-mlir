@@ -42,14 +42,17 @@ control Pipe(bit<10> arg1, in int<16> arg2, out int<16> arg3, inout int<16> arg4
 // CHECK-NEXT: %4 = p4.cast(%3) : si64 -> si16
 // CHECK-NEXT: %5 = p4.cmp(%2, %4) ge : (si16, si16) -> i1
 // CHECK-NEXT: cf.cond_br %5, ^bb1, ^bb2
-// CHECK-NEXT: ^bb1:  // pred: ^bb0
-// CHECK-NEXT: %6 = p4.add(%arg5, %arg7) : (si16, si16) -> si16
-// CHECK-NEXT: %7 = p4.copy(%6) : si16 -> si16
-// CHECK-NEXT: cf.br ^bb3(%7 : si16)
-// CHECK-NEXT: ^bb2:  // pred: ^bb0
-// CHECK-NEXT: %8 = p4.get_member(%arg6) "f1" : !p4.header<"MyHeader"> -> si16
-// CHECK-NEXT: %9 = p4.copy(%8) : si16 -> si16
-// CHECK-NEXT: cf.br ^bb3(%9 : si16)
+
+    // CHECK-NEXT: ^bb1:  // pred: ^bb0
+    // CHECK-NEXT: %6 = p4.add(%arg5, %arg7) : (si16, si16) -> si16
+    // CHECK-NEXT: %7 = p4.copy(%6) : si16 -> si16
+    // CHECK-NEXT: cf.br ^bb3(%7 : si16)
+
+    // CHECK-NEXT: ^bb2:  // pred: ^bb0
+    // CHECK-NEXT: %8 = p4.get_member(%arg6) "f1" : !p4.header<"MyHeader"> -> si16
+    // CHECK-NEXT: %9 = p4.copy(%8) : si16 -> si16
+    // CHECK-NEXT: cf.br ^bb3(%9 : si16)
+
 // CHECK-NEXT: ^bb3(%10: si16):  // 2 preds: ^bb1, ^bb2
 // CHECK-NEXT: p4.store(%arg3, %10) : (!p4.ref<si16>, si16) -> ()
 // CHECK-NEXT: p4.call @foo(%arg4) : (i1) -> ()
@@ -60,10 +63,12 @@ control Pipe(bit<10> arg1, in int<16> arg2, out int<16> arg3, inout int<16> arg4
 // CHECK-NEXT: %0 = p4.self : !p4.ref<!p4.control<"Pipe">>
 // CHECK-NEXT: %1 = p4.copy(%arg6) : !p4.header<"MyHeader"> -> !p4.header<"MyHeader">
 // CHECK-NEXT: cf.cond_br %arg4, ^bb1, ^bb2
-// CHECK-NEXT: ^bb1:  // pred: ^bb0
-// CHECK-NEXT: %2 = p4.get_member(%arg6) "f1" : !p4.header<"MyHeader"> -> si16
-// CHECK-NEXT: %3 = p4.add(%arg5, %2) : (si16, si16) -> si16
-// CHECK-NEXT: p4.store(%arg2, %3) : (!p4.ref<si16>, si16) -> ()
+
+    // CHECK-NEXT: ^bb1:  // pred: ^bb0
+    // CHECK-NEXT: %2 = p4.get_member(%arg6) "f1" : !p4.header<"MyHeader"> -> si16
+    // CHECK-NEXT: %3 = p4.add(%arg5, %2) : (si16, si16) -> si16
+    // CHECK-NEXT: p4.store(%arg2, %3) : (!p4.ref<si16>, si16) -> ()
+
 // CHECK-NEXT: cf.br ^bb2
 // CHECK-NEXT: ^bb2:  // 2 preds: ^bb0, ^bb1
 // CHECK-NEXT: p4.call @Pipe::@bar(%arg5) : (si16) -> ()

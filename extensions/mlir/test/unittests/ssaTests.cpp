@@ -2,9 +2,11 @@
 
 #include <unordered_set>
 #include "test/gtest/helpers.h"
+
 #include "frontends/common/parseInput.h"
 #include "frontends/common/resolveReferences/resolveReferences.h"
 #include "frontends/p4/toP4/toP4.h"
+
 #include "common.h"
 #include "cfgBuilder.h"
 #include "domTree.h"
@@ -13,7 +15,61 @@
 
 namespace p4mlir::tests {
 
-class SSAInfo : public Test::P4CTest { };
+namespace {
+    struct Output {
+        const CFGInfo& cfgInfo;
+        const Allocation& allocation;
+        const SSAInfo& ssaInfo;
+        const IR::P4Program* program = nullptr;
+        const P4::TypeMap* typeMap = nullptr;
+        const P4::ReferenceMap* refMap = nullptr;
+
+        Output(const CFGInfo &cfgInfo_, const Allocation &allocation_, const SSAInfo &ssaInfo_,
+               const IR::P4Program *program_, const P4::TypeMap *typeMap_,
+               const P4::ReferenceMap *refMap_)
+            : cfgInfo(cfgInfo_),
+              allocation(allocation_),
+              ssaInfo(ssaInfo_),
+              program(program_),
+              typeMap(typeMap_),
+              refMap(refMap_) {
+            CHECK_NULL(program, typeMap, refMap);
+        }
+    };
+
+    Output runTestPasses(const std::string& p4src) {
+        ParseOutput po = parseP4ForTests(p4src);
+        if (!po || ::errorCount() > 0) {
+            BUG_CHECK(false, "");
+        }
+
+        auto* program = po.ast;
+        auto* typeMap = po.typeMap;
+        auto* refMap = po.refMap;
+
+        auto* cfgInfo = new CFGInfo();
+        program->apply(p4mlir::MakeCFGInfo(*cfgInfo));
+        if (::errorCount() > 0) {
+            BUG_CHECK(false, "");
+        }
+
+        auto* allocation = new p4mlir::Allocation();
+        program->apply(p4mlir::AllocateVariables(refMap, typeMap, *allocation));
+        if (::errorCount() > 0) {
+            BUG_CHECK(false, "");
+        }
+
+        auto* ssaInfo = new p4mlir::SSAInfo();
+        program->apply(p4mlir::MakeSSAInfo(*ssaInfo, *cfgInfo, *allocation, refMap, typeMap));
+        if (::errorCount() > 0) {
+            BUG_CHECK(false, "");
+        }
+
+        return Output(*cfgInfo, *allocation, *ssaInfo, program, typeMap, refMap);
+    }
+}
+
+class SSAInfo : public Test::P4CTest {};
 
 TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action_1) {
     std::string src = P4_SOURCE(R"(
@@ -29,26 +85,15 @@ TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action_1) {
             return;
         }
     )");
-    auto* program = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
-    ASSERT_TRUE(program && ::errorCount() == 0);
+    Output out = runTestPasses(src);
+    auto& cfgInfo = out.cfgInfo;
+    auto& ssaInfo = out.ssaInfo;
+    auto& allocation = out.allocation;
+    auto* typeMap = out.typeMap;
+    auto* refMap = out.refMap;
 
-    auto* refMap = new P4::ReferenceMap();
-    auto* typeMap = new P4::TypeMap();
-    program = program->apply(P4::ResolveReferences(refMap));
-    program = program->apply(P4::TypeInference(refMap, typeMap, false, true));
-    program = program->apply(P4::TypeChecking(refMap, typeMap, true));
-    ASSERT_TRUE(program && ::errorCount() == 0);
-
-    auto* cfgBuilder = new p4mlir::CFGBuilder();
-    program->apply(*cfgBuilder);
-    auto cfg = cfgBuilder->getCFG();
-    ASSERT_EQ(cfg.size(), (std::size_t)1);
-    ASSERT_TRUE(::errorCount() == 0);
-
-    p4mlir::SSAInfo ssaInfo(nullptr, *cfg.begin(), refMap, typeMap);
-    ASSERT_TRUE(::errorCount() == 0);
-
-    auto* foo = getByName(cfg, "foo");
+    ASSERT_EQ(cfgInfo.size(), (std::size_t)1);
+    auto foo = getByName(cfgInfo, "foo");
 
     auto names = [](auto decls) {
         std::unordered_set<cstring> res;
@@ -83,7 +128,7 @@ TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action_1) {
     // }
 
     auto phiInfo = ssaInfo.getPhiInfo(bb4);
-    p4mlir::SSAInfo::Phi phi = phiInfo.begin()->second;
+    p4mlir::PhiInfo phi = phiInfo.begin()->second;
 
     EXPECT_TRUE(phi.destination.has_value());
     EXPECT_TRUE(phi.sources.at(bb2).has_value());
@@ -92,9 +137,7 @@ TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action_1) {
     // This relies on a single def/use within a statement.
     // Ignores stack allocated vars
     auto writeOrReadID = [&](const IR::StatOrDecl* stmt, bool reads) {
-        GatherStmtSymbols allVars(refMap, [&](auto* ref) { return ssaInfo.isSSARef(ref); });
-        stmt->apply(allVars);
-        p4mlir::GatherSSAReferences refs(typeMap, refMap, allVars.get());
+        p4mlir::GatherSSAReferences refs(typeMap, refMap, allocation);
         stmt->apply(refs);
         std::vector<p4mlir::RefInfo> infos;
         if (reads) {
@@ -104,13 +147,12 @@ TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action_1) {
         }
         EXPECT_EQ(infos.size(), (std::size_t)1);
         auto info = infos.front();
-        EXPECT_TRUE(ssaInfo.isSSARef(info.ref));
         return ssaInfo.getID(info.ref);
     };
     auto writeID = [&](const IR::StatOrDecl* stmt) { return writeOrReadID(stmt, false); };
     auto readID = [&](const IR::StatOrDecl* stmt) { return writeOrReadID(stmt, true); };
 
-    using ID = p4mlir::SSAInfo::ID;
+    using ID = p4mlir::ID;
 
     // bb1
     auto stmtIt = bb1->components.begin();
@@ -173,25 +215,15 @@ TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action_2) {
             return;
         }
     )");
-    auto* program = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
-    ASSERT_TRUE(program && ::errorCount() == 0);
+    Output out = runTestPasses(src);
+    auto& cfgInfo = out.cfgInfo;
+    auto& ssaInfo = out.ssaInfo;
+    auto& allocation = out.allocation;
+    auto* typeMap = out.typeMap;
+    auto* refMap = out.refMap;
 
-    auto* refMap = new P4::ReferenceMap();
-    auto* typeMap = new P4::TypeMap();
-    program = program->apply(P4::ResolveReferences(refMap));
-    program = program->apply(P4::TypeInference(refMap, typeMap, false, true));
-    program = program->apply(P4::TypeChecking(refMap, typeMap, true));
-    ASSERT_TRUE(program && ::errorCount() == 0);
-
-    auto* cfgBuilder = new p4mlir::CFGBuilder();
-    program->apply(*cfgBuilder);
-    auto cfg = cfgBuilder->getCFG();
-    ASSERT_EQ(cfg.size(), (std::size_t)1);
-    auto cfgFoo = getByName(cfg, "foo");
-    ASSERT_TRUE(::errorCount() == 0);
-
-    p4mlir::SSAInfo ssaInfo(nullptr, *cfg.begin(), refMap, typeMap);
-    ASSERT_TRUE(::errorCount() == 0);
+    ASSERT_EQ(cfgInfo.size(), (std::size_t)1);
+    auto cfgFoo = getByName(cfgInfo, "foo");
 
     auto* bb1 = getByStmtString(cfgFoo, "int<16> x1 = (int<16>)16s1;");
     auto* bb2 = getByStmtString(cfgFoo, "int<16> x2 = (int<16>)16s3;");
@@ -216,8 +248,8 @@ TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action_2) {
 TEST_F(SSAInfo, Correctly_detect_SSA_reads_and_writes_after_allocation) {
     std::string src = P4_SOURCE(R"(
         extern int<16> bar1(inout int<16> x1, in int<16> x2);
-        extern int<16> bar2(out int<16> x1);
-        extern int<16> bar3(in int<16> x1, in int<16> x2, in int<16> x3);
+        extern int<16> bar2(out int<16> x3);
+        extern int<16> bar3(in int<16> x4, in int<16> x5, in int<16> x6);
         action foo(in int<16> f7, inout int<16> f8, out int<16> f9) {
             int<16> f1 = 3;
             int<16> f2 = 3;
@@ -236,53 +268,36 @@ TEST_F(SSAInfo, Correctly_detect_SSA_reads_and_writes_after_allocation) {
             return;
         }
     )");
-    auto* program = P4::parseP4String(src, CompilerOptions::FrontendVersion::P4_16);
-    ASSERT_TRUE(program && ::errorCount() == 0);
+    Output out = runTestPasses(src);
+    auto& cfgInfo = out.cfgInfo;
+    auto& ssaInfo = out.ssaInfo;
+    auto& allocation = out.allocation;
+    auto* typeMap = out.typeMap;
+    auto* refMap = out.refMap;
 
-    auto* refMap = new P4::ReferenceMap();
-    auto* typeMap = new P4::TypeMap();
-    program = program->apply(P4::ResolveReferences(refMap));
-    program = program->apply(P4::TypeInference(refMap, typeMap, false, true));
-    program = program->apply(P4::TypeChecking(refMap, typeMap, true));
-    ASSERT_TRUE(program && ::errorCount() == 0);
+    ASSERT_EQ(cfgInfo.size(), (std::size_t)1);
+    auto fooCFG = cfgInfo.begin()->second;
 
-    auto* cfgBuilder = new p4mlir::CFGBuilder();
-    program->apply(*cfgBuilder);
-    auto cfg = cfgBuilder->getCFG();
-    ASSERT_EQ(cfg.size(), (std::size_t)1);
-    auto* foo = cfg.begin()->second;
-    auto* fooAST = cfg.begin()->first->to<IR::P4Action>();
-    ASSERT_TRUE(foo && program && ::errorCount() == 0);
-
-    p4mlir::AllocateVariables alloc(refMap, typeMap);
-    fooAST->apply(alloc);
-    ASSERT_TRUE(program && ::errorCount() == 0);
-    auto ssaVars = alloc.getRegVariables();
-
+    auto ssaVars = allocation.getAllOf(p4mlir::AllocType::REG);
     using unordered = std::unordered_set<cstring>;
-    EXPECT_EQ(names(ssaVars), unordered({"f3", "f5", "f6", "f7"}));
+    EXPECT_EQ(names(ssaVars), unordered({"f3", "f5", "f6", "f7", "x2", "x4", "x5", "x6"}));
 
-    auto writes = [&](auto* stmt) {
-        p4mlir::GatherSSAReferences refs(typeMap, refMap, ssaVars);
+    auto getRefs = [&](auto* stmt, bool reads) {
+        p4mlir::GatherSSAReferences refs(typeMap, refMap, allocation);
         stmt->apply(refs);
         std::vector<const IR::IDeclaration*> decls;
-        auto w = refs.getWrites();
-        std::transform(w.begin(), w.end(), std::back_inserter(decls),
-                       [](auto& x) { return x.decl; });
+        auto infos = refs.getWrites();
+        if (reads) {
+            infos = refs.getReads();
+        }
+        std::transform(infos.begin(), infos.end(), std::back_inserter(decls),
+                       [](auto& info) { return info.decl; });
         return names(decls);
     };
+    auto writes = [&](auto *stmt) { return getRefs(stmt, false); };
+    auto reads = [&](auto *stmt) { return getRefs(stmt, true); };
 
-    auto reads = [&](auto* stmt) {
-        p4mlir::GatherSSAReferences refs(typeMap, refMap, ssaVars);
-        stmt->apply(refs);
-        std::vector<const IR::IDeclaration*> decls;
-        auto r = refs.getReads();
-        std::transform(r.begin(), r.end(), std::back_inserter(decls),
-                       [](auto& x) { return x.decl; });
-        return names(decls);
-    };
-
-    auto stmtIt = foo->components.begin();
+    auto stmtIt = fooCFG.getEntry()->components.begin();
 
     // int<16> f1 = 3;
     EXPECT_EQ(writes(*stmtIt), unordered({}));
@@ -345,8 +360,40 @@ TEST_F(SSAInfo, Correctly_detect_SSA_reads_and_writes_after_allocation) {
     EXPECT_EQ(reads(*stmtIt), unordered({}));
     stmtIt++;
 
-    EXPECT_EQ(stmtIt, foo->components.end());
-    ASSERT_TRUE(program && ::errorCount() == 0);
+    EXPECT_EQ(stmtIt, fooCFG.getEntry()->components.end());
+}
+
+TEST_F(SSAInfo, Test_SSA_calculation_of_parameters) {
+    std::string src = P4_SOURCE(R"(
+        extern int<16> bar1(inout int<16> x1, in int<16> x2);
+        extern int<16> bar2(out int<16> x3);
+
+        control Pipe(in int<16> arg1, out int<16> arg2, inout int<16> arg3)(bool arg4) {
+            int<16> arg5;
+            action foo(in int<16> arg6, out int<16> arg7, inout int<16> arg8, bit<10> arg9) {
+                return;
+            }
+            apply {
+            }
+        }
+    )");
+    Output out = runTestPasses(src);
+    auto& ssaInfo = out.ssaInfo;
+    auto& allocation = out.allocation;
+
+    // None and In direction parameters are REG allocated
+    auto ssaVars = allocation.getAllOf(p4mlir::AllocType::REG);
+    using unordered = std::unordered_set<cstring>;
+    EXPECT_EQ(names(ssaVars), unordered({"x2", "arg1", "arg4", "arg6", "arg9"}));
+
+    // All REG allocated parameters have SSA number assigned, except extern parameters (they cannot
+    // be referenced within the program)
+    for(auto* decl : ssaVars) {
+        if (decl->getName() == "x2") {
+            continue;
+        }
+        EXPECT_NO_THROW(ssaInfo.getID(decl));
+    }
 }
 
 
