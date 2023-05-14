@@ -32,7 +32,6 @@ namespace p4mlir {
 bool isPrimitiveType(const IR::Type *type);
 
 // Gathers all referenced variables which need an allocation.
-// Skips references of non-primitive types
 class GatherAllocatableVariables : public Inspector
 {
     const P4::ReferenceMap* refMap;
@@ -50,11 +49,12 @@ class GatherAllocatableVariables : public Inspector
     ordered_set<const IR::IDeclaration*> getReferencedVars() const { return vars; }
 
  private:
+    bool preorder(const IR::Declaration_Instance* decl) override;
     bool preorder(const IR::Declaration_Variable* decl) override;
     bool preorder(const IR::Parameter* param) override;
 };
 
-enum class AllocType { REG, STACK };
+enum class AllocType { REG, STACK, EXTERN_MEMBER };
 
 // Container to hold allocation types for all allocatable variables
 class Allocation
@@ -73,7 +73,7 @@ class Allocation
     ordered_set<const IR::IDeclaration*> getAllOf(AllocType type) const;
 };
 
-// Assigns either REG or STACK allocation to all referenced allocatable variables.
+// Assigns 'AllocType' to allocatable variables.
 // The allocation depends on the type and context of the references
 class AllocateVariables : public Inspector, P4WriteContext
 {
@@ -95,6 +95,7 @@ class AllocateVariables : public Inspector, P4WriteContext
     bool preorder(const IR::Parameter* param) override;
     bool preorder(const IR::PathExpression* pe) override;
     bool preorder(const IR::P4Control* control) override;
+    bool preorder(const IR::Declaration_Instance* decl) override;
 };
 
 // Convenience class to hold additional info about references

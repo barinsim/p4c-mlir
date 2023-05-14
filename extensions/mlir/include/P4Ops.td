@@ -262,5 +262,11 @@ def CallOp : P4Op<"call", [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
     ];
 }
 
+def CallApplyOp : P4Op<"call_apply"> {
+    let arguments = (ins RefType:$base, Variadic<AnyType>:$opers);
+    let results = (outs);
+    let assemblyFormat = "$base ` ` `(` $opers `)` attr-dict `:` functional-type(operands, results)";
+}
+
 
 #endif // STANDALONE_OPS

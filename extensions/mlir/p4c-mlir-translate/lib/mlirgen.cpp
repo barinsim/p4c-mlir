@@ -319,7 +319,8 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
                 value = builder.create<p4mlir::LoadOp>(loca, type, member);
             }
             valuesTable.add(call, value);
-        } else {
+        }
+        else {
             BUG_CHECK(false, "Unsupported builtin");
         }
     }
@@ -337,6 +338,17 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
             auto callOp = builder.create<p4mlir::CallOp>(loca, retType, name, operands);
             valuesTable.addUnchecked(call, callOp.getResult(0));
         }
+    }
+    else if (auto* applyCall = instance->to<P4::ApplyMethod>()) {
+        if (applyCall->isTableApply()) {
+            BUG_CHECK(false, "Not implemented");
+        }
+        BUG_CHECK(call->method->is<IR::Member>(), "Unexpected indirect call");
+        mlir::Value base = valuesTable.getAddr(call->method->to<IR::Member>()->expr);
+        builder.create<p4mlir::CallApplyOp>(loca, base, operands);
+    }
+    else {
+        BUG_CHECK(false, "Unsupported call type");
     }
 
     // P4 has copy-in/copy-out semantics for calls.
@@ -414,14 +426,15 @@ void MLIRGenImplCFG::postorder(const IR::Argument* arg) {
 
 void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
     auto* type = typeMap->getType(pe, true);
-    if (!isPrimitiveType(type)) {
-        // TODO: this does not consider extern, block and table references
+    if (!isPrimitiveType(type) && !type->is<IR::Type_Control>()) {
         return;
     }
 
-    // References of SSA values do not generate any operations
+    // Retrieve declaration
     CHECK_NULL(pe->path);
     auto* decl = refMap->getDeclaration(pe->path, true);
+
+    // References of SSA values do not generate any operations
     if (allocation.get(decl) == AllocType::REG) {
         // If the SSA value is read, associate it with this 'PathExpression'.
         // It simplifies retrieving the value later
@@ -429,6 +442,20 @@ void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
             ID ssaID = ssaInfo.getID(pe);
             valuesTable.add(pe, valuesTable.get(decl, ssaID));
         }
+        return;
+    }
+
+    // Load address of a compile-time allocated member
+    if (allocation.get(decl) == AllocType::EXTERN_MEMBER) {
+        BUG_CHECK(isWrite(), "Expected write context");
+        CHECK_NULL(pe->path);
+        auto name = builder.getStringAttr(pe->path->toString().c_str());
+        mlir::Value baseValue = getSelfValue().value();
+        auto mlirType = toMLIRType(builder, type);
+        auto refType = wrappedIntoRef(builder, mlirType);
+        auto addr =
+            builder.create<p4mlir::GetMemberRefOp>(loc(builder, pe), refType, baseValue, name);
+        valuesTable.addAddr(pe, addr);
         return;
     }
 
@@ -799,6 +826,19 @@ bool MLIRGenImpl::preorder(const IR::Declaration_Variable* decl) {
     auto type = toMLIRType(builder, typeMap->getType(decl, true));
     cstring name = decl->getName();
     builder.create<p4mlir::MemberDeclOp>(loc(builder, decl), llvm::StringRef(name), type);
+    return false;
+}
+
+bool MLIRGenImpl::preorder(const IR::Declaration_Instance* decl) {
+    if (decl->initializer || !decl->properties.empty()) {
+        BUG_CHECK(false, "Not implemented");
+    }
+    auto type = toMLIRType(builder, typeMap->getType(decl, true));
+    cstring name = decl->getName();
+    builder.create<p4mlir::MemberDeclOp>(loc(builder, decl), llvm::StringRef(name), type);
+
+    // TODO: contructor arguments
+
     return false;
 }
 

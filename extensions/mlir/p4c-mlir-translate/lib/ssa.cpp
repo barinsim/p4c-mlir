@@ -27,6 +27,11 @@ bool isPrimitiveType(const IR::Type *type) {
            type->is<IR::Type::Boolean>() || type->is<IR::Type_StructLike>();
 }
 
+bool GatherAllocatableVariables::preorder(const IR::Declaration_Instance* decl) {
+    vars.insert(decl);
+    return true;
+}
+
 bool GatherAllocatableVariables::preorder(const IR::Declaration_Variable *decl) {
     auto* type = typeMap->getType(decl, true);
     if (!isPrimitiveType(type)) {
@@ -132,6 +137,14 @@ bool AllocateVariables::preorder(const IR::PathExpression* pe) {
     }
 
     return true;
+}
+
+bool AllocateVariables::preorder(const IR::Declaration_Instance* decl) {
+    auto* context = findContext<IR::IContainer>();
+    if (!context) {
+        BUG_CHECK(false, "Not implemented");
+    }
+    allocation.set(decl, AllocType::EXTERN_MEMBER);
 }
 
 void GatherSSAReferences::addRead(const IR::PathExpression *pe,
