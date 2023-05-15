@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 
+#include "cfg.h"
 #include "frontends/common/parseInput.h"
 #include "frontends/common/parser_options.h"
 #include "frontends/common/resolveReferences/resolveReferences.h"
@@ -10,9 +11,6 @@
 #include "ir/ir.h"
 #include "lib/gc.h"
 #include "lib/log.h"
-
-#include "cfgBuilder.h"
-
 
 class BMV2Options : public CompilerOptions {
  public:

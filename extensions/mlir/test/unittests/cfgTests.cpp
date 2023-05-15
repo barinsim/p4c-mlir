@@ -1,12 +1,10 @@
-#include "gtest/gtest.h"
 #include <boost/algorithm/string.hpp>
 
-#include "test/gtest/helpers.h"
-#include "frontends/common/parseInput.h"
+#include "cfg.h"
 #include "common.h"
-
-#include "cfgBuilder.h"
-
+#include "frontends/common/parseInput.h"
+#include "gtest/gtest.h"
+#include "test/gtest/helpers.h"
 
 namespace p4mlir::tests {
 

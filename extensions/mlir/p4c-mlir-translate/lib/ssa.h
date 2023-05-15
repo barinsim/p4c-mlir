@@ -1,28 +1,23 @@
 #ifndef BACKENDS_MLIR_SSA_H_
 #define BACKENDS_MLIR_SSA_H_
 
-
-#include <variant>
-#include <stack>
 #include <exception>
-#include <optional>
 #include <iterator>
+#include <optional>
+#include <stack>
+#include <variant>
 
-#include "ir/ir.h"
-#include "ir/visitor.h"
-#include "ir/dump.h"
-
+#include "cfg.h"
+#include "domTree.h"
 #include "frontends/common/resolveReferences/referenceMap.h"
 #include "frontends/p4/typeMap.h"
-
+#include "ir/dump.h"
+#include "ir/ir.h"
+#include "ir/visitor.h"
 #include "lib/log.h"
 #include "lib/ordered_map.h"
 #include "lib/ordered_set.h"
-
-#include "cfgBuilder.h"
-#include "domTree.h"
 #include "utils.h"
-
 
 namespace p4mlir {
 

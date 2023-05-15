@@ -1,13 +1,11 @@
 #ifndef BACKENDS_MLIR_DOMTREE_H_
 #define BACKENDS_MLIR_DOMTREE_H_
 
-
 #include <vector>
 
+#include "cfg.h"
 #include "lib/ordered_map.h"
 #include "lib/ordered_set.h"
-#include "cfgBuilder.h"
-
 
 namespace p4mlir {
 

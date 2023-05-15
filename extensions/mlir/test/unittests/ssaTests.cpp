@@ -1,17 +1,17 @@
 #include "gtest/gtest.h"
 
 #include <unordered_set>
-#include "test/gtest/helpers.h"
 
+#include "test/gtest/helpers.h"
 #include "frontends/common/parseInput.h"
 #include "frontends/common/resolveReferences/resolveReferences.h"
 #include "frontends/p4/toP4/toP4.h"
 
-#include "common.h"
-#include "cfgBuilder.h"
+#include "cfg.h"
 #include "domTree.h"
 #include "ssa.h"
 
+#include "common.h"
 
 namespace p4mlir::tests {
 

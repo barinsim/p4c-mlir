@@ -1,11 +1,8 @@
-#include "cfgBuilder.h"
-
 #include <boost/algorithm/string.hpp>
 
-#include "lib/indent.h"
-
+#include "cfg.h"
 #include "frontends/p4/toP4/toP4.h"
-
+#include "lib/indent.h"
 
 namespace p4mlir {
 

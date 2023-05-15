@@ -1,20 +1,16 @@
-#include "ir/visitor.h"
+#include "frontends/common/resolveReferences/resolveReferences.h"
+#include "frontends/p4/typeChecking/typeChecker.h"
+#include "frontends/p4/typeMap.h"
+
+#include "ir/dump.h"
 #include "ir/ir.h"
 #include "ir/pass_manager.h"
-#include "ir/dump.h"
+#include "ir/visitor.h"
 
 #include "lib/ordered_map.h"
 
-#include "frontends/p4/typeMap.h"
-#include "frontends/common/resolveReferences/resolveReferences.h"
-#include "frontends/p4/typeChecking/typeChecker.h"
-
-#include "mlir/IR/AsmState.h"
-#include "mlir/IR/BuiltinOps.h"
-#include "mlir/IR/MLIRContext.h"
-#include "mlir/IR/Verifier.h"
-#include "mlir/IR/Block.h"
-#include "mlir/Parser/Parser.h"
+#include "P4Dialect.h"
+#include "P4Ops.h"
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/CommandLine.h"
@@ -23,13 +19,16 @@
 #include "llvm/Support/SourceMgr.h"
 #include "llvm/Support/raw_ostream.h"
 
-#include "cfgBuilder.h"
+#include "mlir/IR/AsmState.h"
+#include "mlir/IR/Block.h"
+#include "mlir/IR/BuiltinOps.h"
+#include "mlir/IR/MLIRContext.h"
+#include "mlir/IR/Verifier.h"
+#include "mlir/Parser/Parser.h"
+
 #include "ssa.h"
 #include "utils.h"
-
-#include "P4Dialect.h"
-#include "P4Ops.h"
-
+#include "cfg.h"
 
 namespace p4mlir {
 

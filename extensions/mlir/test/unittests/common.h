@@ -1,12 +1,11 @@
 #ifndef BACKENDS_MLIR_TESTS_COMMON_H_
 #define BACKENDS_MLIR_TESTS_COMMON_H_
 
-
 #include <string>
 #include <boost/tokenizer.hpp>
 
-#include "cfgBuilder.h"
 #include "P4Dialect.h"
+#include "cfg.h"
 
 #include "frontends/common/parseInput.h"
 #include "frontends/common/resolveReferences/referenceMap.h"
@@ -16,9 +15,8 @@
 #include "lib/ordered_map.h"
 #include "lib/ordered_set.h"
 
-
-#include "mlir/IR/MLIRContext.h"
 #include "mlir/IR/Builders.h"
+#include "mlir/IR/MLIRContext.h"
 
 namespace p4mlir::tests {
 

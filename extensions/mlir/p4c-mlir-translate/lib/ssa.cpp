@@ -1,22 +1,19 @@
 #include "ssa.h"
-#include <variant>
-#include <stack>
+
 #include <exception>
-#include <optional>
 #include <iterator>
+#include <optional>
+#include <stack>
+#include <variant>
 
-#include "ir/ir.h"
-#include "ir/visitor.h"
-#include "ir/dump.h"
-
+#include "cfg.h"
+#include "domTree.h"
 #include "frontends/common/resolveReferences/referenceMap.h"
 #include "frontends/p4/typeMap.h"
-
+#include "ir/dump.h"
+#include "ir/ir.h"
+#include "ir/visitor.h"
 #include "lib/log.h"
-
-#include "cfgBuilder.h"
-#include "domTree.h"
-
 
 namespace p4mlir {
 

@@ -1,6 +1,6 @@
 set (
     GTEST_MLIR_SOURCES
-    cfgBuilderTests.cpp
+    cfgTests.cpp
     domTreeTests.cpp
     ssaTests.cpp
     utilsTests.cpp
