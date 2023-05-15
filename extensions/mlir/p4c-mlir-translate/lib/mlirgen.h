@@ -257,8 +257,7 @@ class MLIRGenImpl : public Inspector
     bool preorder(const IR::Type_Header* hdr) override;
     bool preorder(const IR::Type_Struct* str) override;
     bool preorder(const IR::StructField* field) override;
-    bool preorder(const IR::Declaration_Variable* decl) override;
-    bool preorder(const IR::Declaration_Instance* decl) override;
+    bool preorder(const IR::Declaration* decl) override;
 
     // Generates MLIR for CFG of 'decl', MLIR blocks are inserted into 'targetRegion'.
     // CFG must be accessible through `cfg['decl']`

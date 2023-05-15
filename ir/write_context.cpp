@@ -64,6 +64,13 @@ bool P4WriteContext::isWrite(bool root_value) {
         }
     }
     if (ctxt->node->is<IR::MethodCallExpression>()) {
+        // Check if 'isValid' builtin is called on a header type
+        auto* call = ctxt->node->to<IR::MethodCallExpression>();
+        auto* member = call->method->to<IR::Member>();
+        if (member && member->member.toString() == "isValid" && member->expr &&
+            member->expr->type && member->expr->type->is<IR::Type_StructLike>()) {
+            return false;
+        }
         /* receiver of a method call -- some methods might be 'const' and not modify
          * their receiver, but we currently have no way of determining that */
         return true;

@@ -38,8 +38,14 @@ bool GatherAllocatableVariables::preorder(const IR::Declaration_Variable *decl) 
     return true;
 }
 
-bool GatherAllocatableVariables::preorder(
-    const IR::Parameter *param) {
+bool GatherAllocatableVariables::preorder(const IR::Declaration_Constant *decl) {
+    auto* type = typeMap->getType(decl, true);
+    BUG_CHECK(isPrimitiveType(type), "Expected primitive type");
+    vars.insert(decl);
+    return true;
+}
+
+bool GatherAllocatableVariables::preorder(const IR::Parameter *param) {
     auto* type = typeMap->getType(param, true);
     if (!isPrimitiveType(type)) {
         return true;
@@ -142,6 +148,14 @@ bool AllocateVariables::preorder(const IR::Declaration_Instance* decl) {
         BUG_CHECK(false, "Not implemented");
     }
     allocation.set(decl, AllocType::EXTERN_MEMBER);
+}
+
+bool AllocateVariables::preorder(const IR::Declaration_Constant* decl) {
+    auto* context = findContext<IR::IContainer>();
+    if (!context) {
+        BUG_CHECK(false, "Not implemented");
+    }
+    allocation.set(decl, AllocType::CONSTANT_MEMBER);
 }
 
 void GatherSSAReferences::addRead(const IR::PathExpression *pe,
@@ -318,6 +332,20 @@ bool MakeSSAInfo::preorder(const IR::Declaration_Instance* decl) {
         BUG_CHECK(false, "Not implemented");
     }
     // Number REG variables used as costructor arguments, those can be only constructor parameters
+    // of the enclosing control/parser
+    GatherSSAReferences refs(typeMap, refMap, allocation);
+    decl->apply(refs);
+    BUG_CHECK(refs.getWrites().empty(), "Unexpected SSA variable write");
+    auto reads = refs.getReads();
+    std::for_each(reads.begin(), reads.end(), [&](RefInfo info) {
+        ID ssaID = ssaInfo.getID(info.decl);
+        ssaInfo.numberRef(ssaID, info.ref);
+    });
+    return false;
+}
+
+bool MakeSSAInfo::preorder(const IR::Declaration_Constant* decl) {
+    // Number REG variables used within initializer, those can be only constructor parameters
     // of the enclosing control/parser
     GatherSSAReferences refs(typeMap, refMap, allocation);
     decl->apply(refs);

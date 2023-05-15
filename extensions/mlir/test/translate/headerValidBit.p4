@@ -67,11 +67,8 @@ action bar() {
 // CHECK-NEXT: }
 
 // CHECK-NEXT: p4.action @bar() {
-
 // CHECK-NEXT: %0 = p4.uninitialized : !p4.header<"MyHeader">
-// CHECK-NEXT: %1 = p4.alloc : !p4.ref<!p4.header<"MyHeader">>
-// CHECK-NEXT: p4.store(%1, %0) : (!p4.ref<!p4.header<"MyHeader">>, !p4.header<"MyHeader">) -> ()
-// CHECK-NEXT: %2 = p4.get_member_ref(%1) "__valid" : !p4.ref<!p4.header<"MyHeader">> -> !p4.ref<i1>
-// CHECK-NEXT: %3 = p4.load(%2) : !p4.ref<i1> -> i1
+// CHECK-NEXT: %1 = p4.get_member(%0) "__valid" : !p4.header<"MyHeader"> -> i1
 // CHECK-NEXT: p4.return
 // CHECK-NEXT: }
+

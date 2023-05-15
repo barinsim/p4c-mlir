@@ -445,7 +445,7 @@ void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
         return;
     }
 
-    // Load address of a compile-time allocated member
+    // Load address of a compile-time allocated extern member (includes parser/control)
     if (allocation.get(decl) == AllocType::EXTERN_MEMBER) {
         BUG_CHECK(isWrite(), "Expected write context");
         CHECK_NULL(pe->path);
@@ -456,6 +456,25 @@ void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
         auto addr =
             builder.create<p4mlir::GetMemberRefOp>(loc(builder, pe), refType, baseValue, name);
         valuesTable.addAddr(pe, addr);
+        return;
+    }
+
+    // Load address and materialize a compile-time constant member
+    if (allocation.get(decl) == AllocType::CONSTANT_MEMBER) {
+        BUG_CHECK(isRead(), "Expected read context");
+        CHECK_NULL(pe->path);
+        auto name = builder.getStringAttr(pe->path->toString().c_str());
+        mlir::Value baseValue = getSelfValue().value();
+        auto mlirType = toMLIRType(builder, type);
+        auto refType = wrappedIntoRef(builder, mlirType);
+        auto addr =
+            builder.create<p4mlir::GetMemberRefOp>(loc(builder, pe), refType, baseValue, name);
+        // Do not materialize only to read member
+        mlir::Value value = addr;
+        if (!findContext<IR::Member>()){
+            value = builder.create<p4mlir::LoadOp>(loc(builder, pe), mlirType, addr);
+        }
+        valuesTable.addUnchecked(pe, value);
         return;
     }
 
@@ -621,7 +640,7 @@ bool MLIRGenImpl::preorder(const IR::P4Control* control) {
     auto& locals = control->controlLocals;
     std::for_each(locals.begin(), locals.end(), [&](const IR::Declaration* decl) {
        auto* type = typeMap->getType(decl, true);
-       if (!isPrimitiveType(type)) {
+       if (!isPrimitiveType(type) || decl->is<IR::Declaration_Constant>()) {
            visit(decl);
        }
     });
@@ -820,20 +839,9 @@ bool MLIRGenImpl::preorder(const IR::StructField* field) {
     return false;
 }
 
-bool MLIRGenImpl::preorder(const IR::Declaration_Variable* decl) {
-    if (decl->initializer) {
-        BUG_CHECK(false, "Not implemented");
-    }
-    auto type = toMLIRType(builder, typeMap->getType(decl, true));
-    cstring name = decl->getName();
-    builder.create<p4mlir::MemberDeclOp>(loc(builder, decl), llvm::StringRef(name), type);
-    return false;
-}
-
-bool MLIRGenImpl::preorder(const IR::Declaration_Instance* decl) {
-    if (decl->initializer || !decl->properties.empty()) {
-        BUG_CHECK(false, "Not implemented");
-    }
+bool MLIRGenImpl::preorder(const IR::Declaration* decl) {
+    BUG_CHECK(decl->is<IR::Declaration_Instance>() || decl->is<IR::Declaration_Constant>(),
+              "Expected Declaration_Instance or Declaration_Constant");
 
     // Create MemberDeclOp with 1 entry block within its initializer region
     auto type = toMLIRType(builder, typeMap->getType(decl, true));
@@ -854,18 +862,26 @@ bool MLIRGenImpl::preorder(const IR::Declaration_Instance* decl) {
         selfValue = builder.create<p4mlir::SelfOp>(loc(builder, context.toNode()), refType);
     }
 
-    // Generate the contructor arguments and pass the values into p4.init
+    // Generate the contructor arguments into the initializer region
     auto* cfgMLIRGen = createCFGVisitor(selfValue);
     cfgMLIRGen->apply(decl);
+
+    // Retrieve the MLIR values for the arguments
     std::vector<mlir::Value> argValues;
-    std::for_each(decl->arguments->begin(), decl->arguments->end(), [&](const IR::Argument* arg) {
-        // Retrieve the MLIR value for the argument
-        argValues.push_back(valuesTable.get(arg));
-    });
+    if (auto* declCst = decl->to<IR::Declaration_Constant>()) {
+        CHECK_NULL(declCst->initializer);
+        argValues.push_back(valuesTable.get(declCst->initializer));
+    } else if (auto* declInstance = decl->to<IR::Declaration_Instance>()) {
+        auto* args = declInstance->arguments;
+        std::for_each(args->begin(), args->end(), [&](const IR::Argument* arg) {
+            argValues.push_back(valuesTable.get(arg));
+        });
+    }
+
+    // Generate the p4.init terminator and pass the generated arguments into it
     builder.create<p4mlir::InitOp>(loc(builder, decl), argValues, type);
 
     builder.restoreInsertionPoint(saved);
-
     return false;
 }
 

@@ -46,10 +46,11 @@ class GatherAllocatableVariables : public Inspector
  private:
     bool preorder(const IR::Declaration_Instance* decl) override;
     bool preorder(const IR::Declaration_Variable* decl) override;
+    bool preorder(const IR::Declaration_Constant* decl) override;
     bool preorder(const IR::Parameter* param) override;
 };
 
-enum class AllocType { REG, STACK, EXTERN_MEMBER };
+enum class AllocType { REG, STACK, EXTERN_MEMBER, CONSTANT_MEMBER };
 
 // Container to hold allocation types for all allocatable variables
 class Allocation
@@ -91,6 +92,7 @@ class AllocateVariables : public Inspector, P4WriteContext
     bool preorder(const IR::PathExpression* pe) override;
     bool preorder(const IR::P4Control* control) override;
     bool preorder(const IR::Declaration_Instance* decl) override;
+    bool preorder(const IR::Declaration_Constant* decl) override;
 };
 
 // Convenience class to hold additional info about references
@@ -208,6 +210,7 @@ class MakeSSAInfo : public Inspector
     bool preorder(const IR::P4Control* control) override;
     bool preorder(const IR::P4Action* action) override;
     bool preorder(const IR::Declaration_Instance* decl) override;
+    bool preorder(const IR::Declaration_Constant* decl) override;
 
  private:
     // Calculates SSA form of the 'cfg' control flow graph.
