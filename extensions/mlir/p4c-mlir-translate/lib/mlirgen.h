@@ -159,9 +159,11 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
     }
 
     // This is the main way to run this visitor, 'stmt' must be part of 'bb's components,
-    // otherwise a terminator will not be able to map the successors onto MLIR blocks properly
-    void apply(const IR::StatOrDecl* stmt, BasicBlock* bb) {
-        CHECK_NULL(stmt, bb);
+    // otherwise a terminator will not be able to map the successors onto MLIR blocks properly.
+    // If 'bb' is nullptr, asserts no branching terminators are visited (useful for generating
+    // arguments for instantiations)
+    void apply(const IR::StatOrDecl* stmt, BasicBlock* bb = nullptr) {
+        CHECK_NULL(stmt);
         currBlock = bb;
         customApplyCalled = true;
         stmt->apply(*this);

@@ -139,13 +139,13 @@ def UninitializedOp : P4Op<"uninitialized"> {
     let assemblyFormat = "attr-dict `:` type($result)";
 }
 
-def HeaderOp : P4Op<"header", [SymbolTable, Symbol, IsolatedFromAbove, NoTerminator]> {
+def HeaderOp : P4Op<"header", [SymbolTable, Symbol, NoTerminator]> {
     let arguments = (ins SymbolNameAttr:$sym_name);
     let regions = (region MinSizedRegion<1>:$body);
     let assemblyFormat = "attr-dict $sym_name $body";
 }
 
-def StructOp : P4Op<"struct", [SymbolTable, Symbol, IsolatedFromAbove, NoTerminator]> {
+def StructOp : P4Op<"struct", [SymbolTable, Symbol, NoTerminator]> {
     let arguments = (ins SymbolNameAttr:$sym_name);
     let regions = (region MinSizedRegion<1>:$body);
     let assemblyFormat = "attr-dict $sym_name $body";
@@ -153,7 +153,13 @@ def StructOp : P4Op<"struct", [SymbolTable, Symbol, IsolatedFromAbove, NoTermina
 
 def MemberDeclOp : P4Op<"member_decl", [Symbol]> {
     let arguments = (ins SymbolNameAttr:$sym_name, TypeAttr:$type);
-    let assemblyFormat = "attr-dict $sym_name `:` $type";
+    let regions = (region AnyRegion:$initializer);
+    let assemblyFormat = "attr-dict $sym_name `:` $type ($initializer^)?";
+}
+
+def InitOp : P4Op<"init", [Terminator, HasParent<"MemberDeclOp">]> {
+    let arguments = (ins Variadic<AnyType>:$opers, TypeAttr:$type);
+    let assemblyFormat = "attr-dict $type ` ` `(` operands `)` `:` `(` type(operands) `)`";
 }
 
 def ValidBitDeclOp : P4Op<"valid_bit_decl", [Symbol]> {

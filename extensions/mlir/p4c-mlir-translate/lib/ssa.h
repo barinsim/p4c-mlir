@@ -207,6 +207,7 @@ class MakeSSAInfo : public Inspector
  private:
     bool preorder(const IR::P4Control* control) override;
     bool preorder(const IR::P4Action* action) override;
+    bool preorder(const IR::Declaration_Instance* decl) override;
 
  private:
     // Calculates SSA form of the 'cfg' control flow graph.

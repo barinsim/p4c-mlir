@@ -49,6 +49,18 @@ class BlockContext {
         }
     }
 
+    BlockContext(const IR::INode* n) {
+        if (n) {
+            if (auto* control = n->to<IR::P4Control>()) {
+                node = control;
+            } else if (auto* parser = n->to<IR::P4Parser>()) {
+                node = parser;
+            } else {
+              BUG_CHECK(false, "Expected P4Control or P4Parser");
+            }
+        }
+    }
+
     BlockContext(std::nullptr_t) {}
 
     operator bool() const { return !isEmpty(); }

@@ -313,6 +313,23 @@ bool MakeSSAInfo::preorder(const IR::P4Action* action) {
     return true;
 }
 
+bool MakeSSAInfo::preorder(const IR::Declaration_Instance* decl) {
+    if (decl->initializer || !decl->properties.empty()) {
+        BUG_CHECK(false, "Not implemented");
+    }
+    // Number REG variables used as costructor arguments, those can be only constructor parameters
+    // of the enclosing control/parser
+    GatherSSAReferences refs(typeMap, refMap, allocation);
+    decl->apply(refs);
+    BUG_CHECK(refs.getWrites().empty(), "Unexpected SSA variable write");
+    auto reads = refs.getReads();
+    std::for_each(reads.begin(), reads.end(), [&](RefInfo info) {
+        ID ssaID = ssaInfo.getID(info.decl);
+        ssaInfo.numberRef(ssaID, info.ref);
+    });
+    return false;
+}
+
 void MakeSSAInfo::traverseCFG(const ordered_set<const IR::IDeclaration*>& params, CFG cfg) {
     auto collectWrites = [&]() {
         ordered_map<const IR::IDeclaration*, ordered_set<const BasicBlock*>> rv;

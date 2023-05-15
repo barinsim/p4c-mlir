@@ -31,7 +31,10 @@ control Pipe(bit<10> arg1, in int<16> arg2, out int<16> arg3, inout int<16> arg4
 
 // CHECK-NEXT: p4.control @Pipe(%arg0: ui10, %arg1: si16, %arg2: !p4.ref<si16>, %arg3: !p4.ref<si16>) {
 
-// CHECK-NEXT: p4.member_decl @inner : !p4.control<"InnerPipe">
+// CHECK-NEXT: p4.member_decl @inner : !p4.control<"InnerPipe"> {
+// CHECK-NEXT: %0 = p4.self : !p4.ref<!p4.control<"Pipe">>
+// CHECK-NEXT: p4.init !p4.control<"InnerPipe"> () : ()
+// CHECK-NEXT: }
 
 // CHECK-NEXT: p4.action @bar() {
 // CHECK-NEXT: %0 = p4.self : !p4.ref<!p4.control<"Pipe">>

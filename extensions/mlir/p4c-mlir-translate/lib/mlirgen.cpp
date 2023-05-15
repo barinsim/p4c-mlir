@@ -536,6 +536,7 @@ void MLIRGenImplCFG::postorder(const IR::Mul* mul) {
 }
 
 bool MLIRGenImplCFG::preorder(const IR::IfStatement* ifStmt) {
+    CHECK_NULL(currBlock);
     visit(ifStmt->condition);
     mlir::Value cond = valuesTable.get(ifStmt->condition);
     mlir::Block* tBlock = getMLIRBlock(currBlock->getTrueSuccessor());
@@ -833,11 +834,37 @@ bool MLIRGenImpl::preorder(const IR::Declaration_Instance* decl) {
     if (decl->initializer || !decl->properties.empty()) {
         BUG_CHECK(false, "Not implemented");
     }
+
+    // Create MemberDeclOp with 1 entry block within its initializer region
     auto type = toMLIRType(builder, typeMap->getType(decl, true));
     cstring name = decl->getName();
-    builder.create<p4mlir::MemberDeclOp>(loc(builder, decl), llvm::StringRef(name), type);
+    auto memberOp =
+        builder.create<p4mlir::MemberDeclOp>(loc(builder, decl), llvm::StringRef(name), type);
+    auto& initBlock = memberOp.getInitializer().emplaceBlock();
+    auto saved = builder.saveInsertionPoint();
+    builder.setInsertionPointToStart(&initBlock);
 
-    // TODO: contructor arguments
+    // Generate p4.self (might be needed if member const variables are used in constructor)
+    BlockContext context = findContext<IR::IContainer>();
+    std::optional<mlir::Value> selfValue;
+    if (context) {
+        const IR::Type* p4type = context.getType();
+        auto contextType = toMLIRType(builder, p4type);
+        auto refType = wrappedIntoRef(builder, contextType);
+        selfValue = builder.create<p4mlir::SelfOp>(loc(builder, context.toNode()), refType);
+    }
+
+    // Generate the contructor arguments and pass the values into p4.init
+    auto* cfgMLIRGen = createCFGVisitor(selfValue);
+    cfgMLIRGen->apply(decl);
+    std::vector<mlir::Value> argValues;
+    std::for_each(decl->arguments->begin(), decl->arguments->end(), [&](const IR::Argument* arg) {
+        // Retrieve the MLIR value for the argument
+        argValues.push_back(valuesTable.get(arg));
+    });
+    builder.create<p4mlir::InitOp>(loc(builder, decl), argValues, type);
+
+    builder.restoreInsertionPoint(saved);
 
     return false;
 }
