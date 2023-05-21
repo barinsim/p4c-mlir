@@ -16,6 +16,8 @@ limitations under the License.
 
 #include "typeChecker.h"
 
+#include <iterator>
+
 #include "frontends/common/constantFolding.h"
 #include "frontends/common/resolveReferences/resolveReferences.h"
 #include "frontends/p4/coreLibrary.h"
@@ -978,8 +980,20 @@ std::pair<const IR::Type *, const IR::Vector<IR::Argument> *> TypeInference::che
     if (changed) arguments = newArgs;
     auto objectType = new IR::Type_Extern(ext->srcInfo, ext->name, methodType->typeParameters,
                                           freshExtern->methods);
-    learn(objectType, this);
-    return {objectType, arguments};
+
+    // Collect deduced type arguments
+    auto *tmp = new IR::Vector<IR::Type>();
+    auto& typeParams = methodType->typeParameters->parameters;
+    for (auto* type : typeParams) {
+        tmp->push_back(type);
+    }
+    auto* typeArgs = tmp->apply(substVisitor)->to<IR::Vector<IR::Type>>();
+
+    auto* substituted = objectType->apply(substVisitor)->to<IR::Type_Extern>();
+    auto specialized =
+        new IR::Type_SpecializedCanonical(ext->srcInfo, objectType, typeArgs, substituted);
+    learn(specialized, this);
+    return {specialized, arguments};
 }
 
 // Return true on success
