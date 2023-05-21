@@ -129,8 +129,8 @@ class BlockContext {
 };
 
 // Represents all P4 constructs that can be referenced by an MLIR symbol within the P4 dialect
-using ReferenceableNode =
-    std::variant<const IR::P4Action *, const IR::Method *, const IR::P4Control *>;
+using ReferenceableNode = std::variant<const IR::P4Action *, const IR::Method *,
+                                       const IR::P4Control *, const IR::Type_Extern *>;
 
 // Represents isolated parts of the fully qualified symbol
 using SymbolParts = std::vector<mlir::StringAttr>;
@@ -219,12 +219,25 @@ class MakeFullyQualifiedSymbols : public Inspector {
     void postorder(const IR::P4Action *) override { currentScope.pop_back(); }
 
     bool preorder(const IR::Method *method) override {
-        addToCurrentScope(method);
+        // To solve P4 overloading of methods, the names of methods in MLIR consist of the original
+        // P4 name + '_' + <number of parameters>
+        std::size_t numParams = method->getParameters()->size();
+        std::string newName = method->getName().toString() + "_" + std::to_string(numParams);
+        auto strAttr = builder.getStringAttr(newName);
+        currentScope.push_back(strAttr);
         symbols.add(method, currentScope);
         return true;
     }
 
     void postorder(const IR::Method *) override { currentScope.pop_back(); }
+
+    bool preorder(const IR::Type_Extern *ext) override {
+        addToCurrentScope(ext);
+        symbols.add(ext, currentScope);
+        return true;
+    }
+
+    void postorder(const IR::Type_Extern *) override { currentScope.pop_back(); }
 
     // Convenience method to add symbol part to the end of the 'currentScope'
     void addToCurrentScope(ReferenceableNode node) {
@@ -234,7 +247,6 @@ class MakeFullyQualifiedSymbols : public Inspector {
         currentScope.push_back(strAttr);
     }
 };
-
 
 // Pass that converts all out-of-apply local declarations which can be referenced from an action
 // into direct action parameters, which allows to move all out-of-apply local declarations into MLIR

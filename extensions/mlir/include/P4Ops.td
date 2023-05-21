@@ -12,6 +12,10 @@ include "mlir/IR/OpBase.td"
 include "mlir/IR/BuiltinTypes.td"
 include "mlir/IR/EnumAttr.td"
 
+def Template : NativeOpTrait<"Template"> {
+    string cppNamespace = "";
+}
+
 def ConstantOp : P4Op<"constant"> {
     // TODO: for some reason these must be prefixed with Builtin_
     let arguments = (ins Builtin_IntegerAttr:$value);
@@ -27,7 +31,7 @@ def ConstantOp : P4Op<"constant"> {
     ];
 }
 
-def ControlOp : P4Op<"control", [SymbolTable, IsolatedFromAbove, NoTerminator]> {
+def ControlOp : P4Op<"control", [Symbol, SymbolTable, IsolatedFromAbove, NoTerminator]> {
     let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<FunctionType>:$apply_type,
                        TypeAttrOf<FunctionType>:$constructor_type);
@@ -64,9 +68,10 @@ def ActionOp : P4Op<"action", [Symbol, FunctionOpInterface]> {
     }];
 }
 
-def ExternOp : P4Op<"extern", [Symbol, FunctionOpInterface]> {
+def ExternOp : P4Op<"extern", [Symbol, FunctionOpInterface, Template]> {
     let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<FunctionType>:$function_type,
+                       OptionalAttr<ArrayAttr>:$type_parameters,
                        OptionalAttr<StrAttr>:$sym_visibility,
                        OptionalAttr<DictArrayAttr>:$arg_attrs,
                        OptionalAttr<DictArrayAttr>:$res_attrs);
@@ -75,6 +80,7 @@ def ExternOp : P4Op<"extern", [Symbol, FunctionOpInterface]> {
 
     let builders = [OpBuilder<(ins
         "::llvm::StringRef":$name, "FunctionType":$type,
+        CArg<"::mlir::ArrayAttr", "{}">:$typeParams,
         CArg<"::llvm::ArrayRef<NamedAttribute>", "{}">:$attrs,
         CArg<"::llvm::ArrayRef<DictionaryAttr>", "{}">:$argAttrs)
    >];
@@ -90,6 +96,12 @@ def ExternOp : P4Op<"extern", [Symbol, FunctionOpInterface]> {
         /// Returns the result types of this function.
         ::llvm::ArrayRef<::mlir::Type> getResultTypes() { return getFunctionType().getResults(); }
     }];
+}
+
+def ExternClassOp : P4Op<"extern_class", [Symbol, SymbolTable, NoTerminator, Template]> {
+    let arguments = (ins SymbolNameAttr:$sym_name, OptionalAttr<ArrayAttr>:$type_parameters);
+    let regions = (region SizedRegion<1>:$body);
+    let hasCustomAssemblyFormat = 1;
 }
 
 def ApplyOp : P4Op<"apply", [HasParent<"ControlOp">]> {
@@ -193,6 +205,12 @@ class P4Dialect_Type<string name, string typeMnemonic, list<Trait> traits = []>
     let mnemonic = typeMnemonic;
 }
 
+// TODO: check the type is a part of 'Template' op
+def TypeVarType : P4Dialect_Type<"TypeVar", "type_var"> {
+    let parameters = (ins StringRefParameter<"Type variable name">:$name);
+    let hasCustomAssemblyFormat = 1;
+}
+
 def HeaderType : P4Dialect_Type<"Header", "header"> {
     let parameters = (ins StringRefParameter<"Header type name">:$name);
     let assemblyFormat = "`<` $name `>`";
@@ -206,6 +224,11 @@ def StructType : P4Dialect_Type<"Struct", "struct"> {
 def ControlType : P4Dialect_Type<"Control", "control"> {
     let parameters = (ins StringRefParameter<"Control type name">:$name);
     let assemblyFormat = "`<` $name `>`";
+}
+
+def ExternClassType : P4Dialect_Type<"ExternClass", "extern_class"> {
+    let parameters = (ins StringRefParameter<"Extern class type name">:$name, OptionalArrayRefParameter<"mlir::Type">:$type_arguments);
+    let assemblyFormat = "`<` $name (`<` $type_arguments^ `>`)? `>`";
 }
 
 def RefType : P4Dialect_Type<"Ref", "ref"> {
@@ -253,17 +276,25 @@ def SelfOp : P4Op<"self"> {
 }
 
 def CallOp : P4Op<"call", [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
-    let arguments = (ins SymbolRefAttr:$callee, Variadic<AnyType>:$operands);
+    let arguments = (ins SymbolRefAttr:$callee,
+                       OptionalAttr<TypeArrayAttr>:$type_operands,
+                       Variadic<AnyType>:$operands);
     let results = (outs Variadic<AnyType>);
-    let assemblyFormat = "$callee `(` $operands `)` attr-dict `:` functional-type($operands, results)";
+    let hasCustomAssemblyFormat = 1;
 
     let builders = [
-        OpBuilder<(ins "::mlir::SymbolRefAttr":$callee, "::mlir::ValueRange":$operands), [{
-            build($_builder, $_state, mlir::TypeRange{}, callee, operands);
+        // Convenience builder from TypeRange for type operands
+        OpBuilder<(ins "::mlir::TypeRange":$resultTypes, "::mlir::SymbolRefAttr":$callee, "::mlir::TypeRange":$type_operands, "::mlir::ValueRange":$operands), [{
+            if (type_operands.empty()) {
+                build($_builder, $_state, resultTypes, callee, mlir::ArrayAttr{{}}, operands);
+                return;
+            }
+            build($_builder, $_state, resultTypes, callee, $_builder.getTypeArrayAttr(type_operands), operands);
         }]>,
 
-        OpBuilder<(ins "::mlir::Type":$resultType, "::mlir::SymbolRefAttr":$callee, "::mlir::ValueRange":$operands), [{
-            build($_builder, $_state, mlir::TypeRange{resultType}, callee, operands);
+        // Convenience builder for action calls
+        OpBuilder<(ins "::mlir::SymbolRefAttr":$callee, "::mlir::ValueRange":$operands), [{
+            build($_builder, $_state, {}, callee, mlir::TypeRange{}, operands);
         }]>
     ];
 }

@@ -71,8 +71,29 @@ mlir::Type toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) {
         }
         return builder.getFunctionType(paramTypes, retTypes);
     }
+    else if (auto* typeVar = p4type->to<IR::Type_Var>()) {
+        llvm::StringRef name = typeVar->getVarName().c_str();
+        return p4mlir::TypeVarType::get(builder.getContext(), name);
+    }
+    else if (auto* ext = p4type->to<IR::Type_Extern>()) {
+        llvm::StringRef name = ext->getName().toString().c_str();
+        return p4mlir::ExternClassType::get(builder.getContext(), name, {});
+    }
+    else if (auto* specialized = p4type->to<IR::Type_SpecializedCanonical>()) {
+        BUG_CHECK(specialized->substituted->is<IR::Type_Extern>(), "Expected extern class type");
+        auto* ext = specialized->substituted->to<IR::Type_Extern>();
+        llvm::StringRef name = ext->getName().toString().c_str();
 
-    throw std::domain_error("Not implemented");
+        // Collect type arguments
+        std::vector<mlir::Type> typeArgs;
+        std::transform(specialized->arguments->begin(), specialized->arguments->end(),
+                       std::back_inserter(typeArgs),
+                       [&](const IR::Type *type) { return toMLIRType(builder, type); });
+
+        return p4mlir::ExternClassType::get(builder.getContext(), name, typeArgs);
+    }
+
+    BUG_CHECK(false, "Not implemented");
     return nullptr;
 }
 
@@ -284,6 +305,17 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
         }
     }
 
+    // Get type parameters of the call
+    std::vector<mlir::Type> typeOperands;
+    std::transform(call->typeArguments->begin(), call->typeArguments->end(),
+                   std::back_inserter(typeOperands), [&](const IR::Type *p4type) {
+                       if (auto *typeName = p4type->to<IR::Type_Name>()) {
+                           CHECK_NULL(typeName->path);
+                           p4type = refMap->getDeclaration(typeName->path)->to<IR::Type>();
+                       }
+                       return toMLIRType(builder, p4type);
+                   });
+
     // Generate depending on type of the call
     if (auto* actCall = instance->to<P4::ActionCall>()) {
         auto name = symbols.getSymbol(actCall->action);
@@ -326,16 +358,17 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
     }
     else if (auto* externFunc = instance->to<P4::ExternFunction>()) {
         auto name = symbols.getSymbol(externFunc->method);
-
-        // TODO: overloaded function names
-
         auto* p4RetType = externFunc->method->type->returnType;
-        if (!p4RetType || p4RetType->is<IR::Type_Void>()) {
-            // P4 mlir does not have a void type, the call in this case has 0 return types
-            builder.create<p4mlir::CallOp>(loca, name, operands);
-        } else {
-            auto retType = toMLIRType(builder, p4RetType);
-            auto callOp = builder.create<p4mlir::CallOp>(loca, retType, name, operands);
+        std::vector<mlir::Type> retTypes;
+        if (p4RetType && !p4RetType->is<IR::Type_Void>()) {
+            if (auto* typeName = p4RetType->to<IR::Type_Name>()) {
+                CHECK_NULL(typeName->path);
+                p4RetType = refMap->getDeclaration(typeName->path, true)->to<IR::Type>();
+            }
+            retTypes.push_back(toMLIRType(builder, p4RetType));
+        }
+        auto callOp = builder.create<p4mlir::CallOp>(loca, retTypes, name, typeOperands, operands);
+        if (!callOp->getResults().empty()) {
             valuesTable.addUnchecked(call, callOp.getResult(0));
         }
     }
@@ -426,7 +459,9 @@ void MLIRGenImplCFG::postorder(const IR::Argument* arg) {
 
 void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
     auto* type = typeMap->getType(pe, true);
-    if (!isPrimitiveType(type) && !type->is<IR::Type_Control>()) {
+
+    // Function/method reference does not generate any ops and can be skipped
+    if (type->is<IR::Type_MethodBase>()) {
         return;
     }
 
@@ -447,7 +482,6 @@ void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
 
     // Load address of a compile-time allocated extern member (includes parser/control)
     if (allocation.get(decl) == AllocType::EXTERN_MEMBER) {
-        BUG_CHECK(isWrite(), "Expected write context");
         CHECK_NULL(pe->path);
         auto name = builder.getStringAttr(pe->path->toString().c_str());
         mlir::Value baseValue = getSelfValue().value();
@@ -698,11 +732,22 @@ bool MLIRGenImpl::preorder(const IR::P4Action* action) {
 }
 
 bool MLIRGenImpl::preorder(const IR::Method* method) {
+    // P4 has overloaded extern methods/functions, which must be 'unoverloaded' for MLIR.
+    // The name consists of the original P4 name + '_' + <number of parameters>
+    std::size_t numParams = method->getParameters()->size();
+    std::string newName = method->getName().toString() + "_" + std::to_string(numParams);
+
+    // Collect type parameters
+    std::vector<mlir::StringRef> typeParams;
+    auto& p4TypeParams = method->type->typeParameters->parameters;
+    std::transform(p4TypeParams.begin(), p4TypeParams.end(), std::back_inserter(typeParams),
+                   [](const IR::Type_Var *typeVar) { return typeVar->getVarName().c_str(); });
+
     // Create ExternOp
-    llvm::StringRef name(method->getName().toString());
     auto funcType = toMLIRType(builder, typeMap->getType(method, true));
-    auto actOp = builder.create<p4mlir::ExternOp>(loc(builder, method), name,
-                                                  funcType.cast<mlir::FunctionType>());
+    auto actOp = builder.create<p4mlir::ExternOp>(loc(builder, method), newName,
+                                                  funcType.cast<mlir::FunctionType>(),
+                                                  builder.getStrArrayAttr(typeParams));
     return false;
 }
 
@@ -822,6 +867,28 @@ bool MLIRGenImpl::preorder(const IR::Type_Struct* str) {
 
     // Generate member declarations
     visit(str->fields);
+
+    builder.restoreInsertionPoint(saved);
+    return false;
+}
+
+bool MLIRGenImpl::preorder(const IR::Type_Extern* ext) {
+    // Collect type parameters
+    std::vector<mlir::StringRef> typeParams;
+    auto& p4TypeParams = ext->typeParameters->parameters;
+    std::transform(p4TypeParams.begin(), p4TypeParams.end(), std::back_inserter(typeParams),
+                   [](const IR::Type_Var *typeVar) { return typeVar->getVarName().c_str(); });
+
+    // Create ExternClassOp and insert 1 block
+    llvm::StringRef name = ext->name.toString().c_str();
+    auto extClassOp = builder.create<p4mlir::ExternClassOp>(loc(builder, ext), name,
+                                                            builder.getStrArrayAttr(typeParams));
+    auto& body = extClassOp.getBody().emplaceBlock();
+    auto saved = builder.saveInsertionPoint();
+    builder.setInsertionPointToEnd(&body);
+
+    // Generate Methods
+    visit(ext->methods);
 
     builder.restoreInsertionPoint(saved);
     return false;

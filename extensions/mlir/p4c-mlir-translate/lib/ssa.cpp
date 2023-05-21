@@ -48,7 +48,11 @@ bool GatherAllocatableVariables::preorder(const IR::Declaration_Constant *decl) 
 bool GatherAllocatableVariables::preorder(const IR::Parameter *param) {
     auto* type = typeMap->getType(param, true);
     if (!isPrimitiveType(type)) {
-        return true;
+        return false;
+    }
+    // Parameters of extern methods/functions are not used within a P4 program, no need to allocate
+    if (findContext<IR::Method>()) {
+        return false;
     }
     vars.insert(param);
     return true;
@@ -91,13 +95,13 @@ Visitor::profile_t AllocateVariables::init_apply(const IR::Node* node) {
 }
 
 bool AllocateVariables::preorder(const IR::Parameter* param) {
-    // Allocate `out` and `inout` parameters onto STACK.
-    auto* type = param->type;
-    if (auto* typeName = type->to<IR::Type_Name>()) {
-        CHECK_NULL(typeName->path);
-        type = refMap->getDeclaration(typeName->path, true)->to<IR::Type>();
+    // Parameters of externs are not used within a p4 program, no need to allocate
+    if (findContext<IR::Type_Method>()) {
+        return false;
     }
-    BUG_CHECK(type && isPrimitiveType(type), "Unexpected parameter type");
+    // Allocate `out` and `inout` parameters onto STACK.
+    auto* type = typeMap->getType(param, true);
+    BUG_CHECK(isPrimitiveType(type), "Unexpected parameter type");
     if (param->direction == IR::Direction::InOut || param->direction == IR::Direction::Out) {
         allocation.set(param, AllocType::STACK);
     }

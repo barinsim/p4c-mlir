@@ -13,3 +13,4 @@ add_mlir_dialect_library(MLIRP4Dialect
         MLIRInferTypeOpInterface
         MLIRControlFlowDialect
 )
+target_include_directories(MLIRP4Dialect PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})

@@ -21,6 +21,14 @@ TEST_F(MakeFullyQualifiedSymbols, Test_all_referenceable_constructs) {
 
         extern bit<16> faz(int<10> arg);
 
+        extern Reg {
+            Reg();
+            Reg(in bit<10> arg1);
+            void extract();
+            void extract(int<32> arg1, int<32> arg2);
+            void extract(int<32> arg1);
+        }
+
         control Pipe1() {
             action foo() {}
             action bar() {}
@@ -49,7 +57,7 @@ TEST_F(MakeFullyQualifiedSymbols, Test_all_referenceable_constructs) {
 
     std::unordered_set<std::string> syms(strs.begin(), strs.end());
     EXPECT_TRUE(syms.count("foo"));
-    EXPECT_TRUE(syms.count("faz"));
+    EXPECT_TRUE(syms.count("faz_1"));
     EXPECT_TRUE(syms.count("Pipe1"));
     EXPECT_TRUE(syms.count("Pipe1::foo"));
     EXPECT_TRUE(syms.count("Pipe1::bar"));
@@ -57,7 +65,13 @@ TEST_F(MakeFullyQualifiedSymbols, Test_all_referenceable_constructs) {
     EXPECT_TRUE(syms.count("Pipe2::foo"));
     EXPECT_TRUE(syms.count("Pipe2::baz"));
     EXPECT_TRUE(syms.count("Pipe3"));
-    EXPECT_EQ(syms.size(), 9ULL);
+    EXPECT_TRUE(syms.count("Reg"));
+    EXPECT_TRUE(syms.count("Reg::Reg_0"));
+    EXPECT_TRUE(syms.count("Reg::Reg_1"));
+    EXPECT_TRUE(syms.count("Reg::extract_0"));
+    EXPECT_TRUE(syms.count("Reg::extract_2"));
+    EXPECT_TRUE(syms.count("Reg::extract_1"));
+    EXPECT_EQ(syms.size(), 15ULL);
 }
 
 class AddRealActionParams : public Test::P4CTest {};

@@ -280,7 +280,7 @@ TEST_F(SSAInfo, Correctly_detect_SSA_reads_and_writes_after_allocation) {
 
     auto ssaVars = allocation.getAllOf(p4mlir::AllocType::REG);
     using unordered = std::unordered_set<cstring>;
-    EXPECT_EQ(names(ssaVars), unordered({"f3", "f5", "f6", "f7", "x2", "x4", "x5", "x6"}));
+    EXPECT_EQ(names(ssaVars), unordered({"f3", "f5", "f6", "f7"}));
 
     auto getRefs = [&](auto* stmt, bool reads) {
         p4mlir::GatherSSAReferences refs(typeMap, refMap, allocation);
@@ -384,7 +384,7 @@ TEST_F(SSAInfo, Test_SSA_calculation_of_parameters) {
     // None and In direction parameters are REG allocated
     auto ssaVars = allocation.getAllOf(p4mlir::AllocType::REG);
     using unordered = std::unordered_set<cstring>;
-    EXPECT_EQ(names(ssaVars), unordered({"x2", "arg1", "arg4", "arg6", "arg9"}));
+    EXPECT_EQ(names(ssaVars), unordered({"arg1", "arg4", "arg6", "arg9"}));
 
     // All REG allocated parameters have SSA number assigned, except extern parameters (they cannot
     // be referenced within the program)

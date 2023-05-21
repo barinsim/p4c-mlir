@@ -107,13 +107,81 @@ void ControlOp::print(mlir::OpAsmPrinter &printer) {
     printer.printRegion(getBody(), false, true);
 }
 
-void ActionOp::print(mlir::OpAsmPrinter &printer) {
-    mlir::function_interface_impl::printFunctionOp(printer, *this, /*isVariadic=*/false,
-                                                   getFunctionTypeAttrName(), getArgAttrsAttrName(),
-                                                   getResAttrsAttrName());
+void CallOp::print(mlir::OpAsmPrinter &printer) {
+    printer << ' ';
+    printer.printAttributeWithoutType(getCalleeAttr());
+    auto typeOperands = getTypeOperands();
+    if (typeOperands) {
+        printer << '<';
+        printer.printType(typeOperands->begin()->cast<mlir::TypeAttr>().getValue());
+        std::for_each(typeOperands->begin() + 1, typeOperands->end(), [&](mlir::Attribute attr) {
+            printer << ", ";
+            printer.printType(attr.cast<TypeAttr>().getValue());
+        });
+        printer << '>';
+    }
+    printer << "(";
+    printer << getOperands();
+    printer << ")";
+    ::llvm::SmallVector<::llvm::StringRef, 2> elidedAttrs;
+    elidedAttrs.push_back("callee");
+    elidedAttrs.push_back("type_operands");
+    printer.printOptionalAttrDict((*this)->getAttrs(), elidedAttrs);
+    printer << " : ";
+    printer.printFunctionalType(getOperands().getTypes(), getOperation()->getResultTypes());
+}
+
+mlir::ParseResult CallOp::parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {
+    // TODO:
+    return mlir::failure();
 }
 
 void ExternOp::print(mlir::OpAsmPrinter &printer) {
+    printer << ' ';
+    printer.printSymbolName(getSymName());
+    auto typeParams = getTypeParameters();
+    if (typeParams && !typeParams->empty()) {
+        printer << '<';
+        printer.printSymbolName(typeParams->begin()->dyn_cast_or_null<mlir::StringAttr>());
+        std::for_each(typeParams->begin() + 1, typeParams->end(), [&](Attribute attr) {
+            printer << ", ";
+            printer.printSymbolName(attr.dyn_cast_or_null<mlir::StringAttr>());
+        });
+        printer << '>';
+    }
+    auto type = getFunctionType();
+    function_interface_impl::printFunctionSignature(printer, *this, type.getInputs(), false,
+                                                    type.getResults());
+}
+
+mlir::ParseResult ExternOp::parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {
+    // TODO:
+    return mlir::failure();
+}
+
+void ExternClassOp::print(mlir::OpAsmPrinter &printer) {
+    printer << ' ';
+    printer.printSymbolName(getSymName());
+    auto typeParams = getTypeParameters();
+    if (typeParams && !typeParams->empty()) {
+        printer << '<';
+        printer.printSymbolName(typeParams->begin()->dyn_cast_or_null<mlir::StringAttr>());
+        std::for_each(typeParams->begin() + 1, typeParams->end(), [&](Attribute attr) {
+            printer << ", ";
+            printer.printSymbolName(attr.dyn_cast_or_null<mlir::StringAttr>());
+        });
+        printer << '>';
+    }
+    printer << ' ';
+    printer.printRegion(getBody());
+}
+
+mlir::ParseResult ExternClassOp::parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {
+    // TODO:
+    return mlir::failure();
+}
+
+void ActionOp::print(mlir::OpAsmPrinter &printer) {
     mlir::function_interface_impl::printFunctionOp(printer, *this, /*isVariadic=*/false,
                                                    getFunctionTypeAttrName(), getArgAttrsAttrName(),
                                                    getResAttrsAttrName());
@@ -124,10 +192,6 @@ mlir::ParseResult ActionOp::parse(mlir::OpAsmParser &parser, mlir::OperationStat
     return mlir::failure();
 }
 
-mlir::ParseResult ExternOp::parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {
-    // TODO:
-    return mlir::failure();
-}
 
 void ActionOp::build(mlir::OpBuilder &builder, mlir::OperationState &state, llvm::StringRef name,
                      mlir::FunctionType type, llvm::ArrayRef<mlir::NamedAttribute> attrs,
@@ -136,14 +200,27 @@ void ActionOp::build(mlir::OpBuilder &builder, mlir::OperationState &state, llvm
 }
 
 void ExternOp::build(mlir::OpBuilder &builder, mlir::OperationState &state, llvm::StringRef name,
-                     mlir::FunctionType type, llvm::ArrayRef<mlir::NamedAttribute> attrs,
+                     mlir::FunctionType type, ::mlir::ArrayAttr typeParams,
+                     llvm::ArrayRef<mlir::NamedAttribute> attrs,
                      llvm::ArrayRef<mlir::DictionaryAttr> argAttrs) {
     buildFuncLikeOp<ExternOp>(builder, state, name, type, attrs, argAttrs);
+    state.addAttribute(getTypeParametersAttrName(state.name).getValue(), typeParams);
 }
 
 mlir::ParseResult ControlOp::parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {
     // TODO:
     return mlir::failure();
+}
+
+void TypeVarType::print(::mlir::AsmPrinter &printer) const {
+    printer << '<';
+    printer.printSymbolName(getName());
+    printer << '>';
+}
+
+::mlir::Type TypeVarType::parse(::mlir::AsmParser &odsParser) {
+    // TODO
+    return mlir::Type();
 }
 
 mlir::LogicalResult CallOp::verifySymbolUses(::mlir::SymbolTableCollection& symbolTable) {
@@ -156,6 +233,17 @@ mlir::LogicalResult CallOp::verifySymbolUses(::mlir::SymbolTableCollection& symb
     if (!func) {
         return emitOpError() << "'" << callee.getNestedReferences()
                              << "' does not reference a valid callable";
+    }
+
+    // TODO: check template method calls
+    std::vector<mlir::Type> types;
+    std::copy(func.getArgumentTypes().begin(), func.getArgumentTypes().end(),
+              std::back_inserter(types));
+    std::copy(func.getResultTypes().begin(), func.getResultTypes().end(),
+              std::back_inserter(types));
+    if (std::any_of(types.begin(), types.end(),
+                    [](mlir::Type type) { return type.isa<p4mlir::TypeVarType>(); })) {
+        return mlir::success();
     }
 
     // Verify that the operand types match the callee
