@@ -120,26 +120,26 @@ TEST_F(AddRealActionParams, Test_appending_params_arg_with_shadowing) {
             action bak() {
                 foo();
             }
-            bit<10> __mem1;
-            int<20> __mem2;
-            action foo(inout bit<10> __mem1, inout int<20> __mem2, in bit<10> x2, int<20> x1) {
-                __mem1 = (bit<10>)10w4;
+            bit<10> __ADD_mem1;
+            int<20> __ADD_mem2;
+            action foo(inout bit<10> __ADD_mem1, inout int<20> __ADD_mem2, in bit<10> x2, int<20> x1) {
+                __ADD_mem1 = (bit<10>)10w4;
             }
-            int<5> __mem3;
-            bit<5> __mem4;
-            action baz(inout bit<10> __mem1, inout int<20> __mem2, inout int<5> __mem3, inout bit<5> __mem4) {
+            int<5> __ADD_mem3;
+            bit<5> __ADD_mem4;
+            action baz(inout bit<10> __ADD_mem1, inout int<20> __ADD_mem2, inout int<5> __ADD_mem3, inout bit<5> __ADD_mem4) {
                 int<20> tmp = (int<20>)20s3;
-                foo(__mem1, __mem2, (bit<10>)10w1, tmp);
+                foo(__ADD_mem1, __ADD_mem2, (bit<10>)10w1, tmp);
             }
-            action bar(inout bit<10> __mem1, inout int<20> __mem2, inout int<5> __mem3, inout bit<5> __mem4, inout int<20> x1, out bit<10> x2) {
+            action bar(inout bit<10> __ADD_mem1, inout int<20> __ADD_mem2, inout int<5> __ADD_mem3, inout bit<5> __ADD_mem4, inout int<20> x1, out bit<10> x2) {
                 int<20> mem2 = (int<20>)20s3;
                 if (x1 == mem2) {
-                    foo(__mem1, __mem2, (bit<10>)10w1, mem2);
+                    foo(__ADD_mem1, __ADD_mem2, (bit<10>)10w1, mem2);
                 }
             }
             apply {
                 int<5> mem4 = (int<5>)5s1;
-                __mem3 = 5s3 + mem4;
+                __ADD_mem3 = 5s3 + mem4;
             }
         })"));
 }

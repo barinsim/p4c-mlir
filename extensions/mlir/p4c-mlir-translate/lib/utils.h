@@ -285,17 +285,24 @@ class MakeFullyQualifiedSymbols : public Inspector
 //
 // --->
 //
-//  int<16> __x1 = 2;
-//  foo(inout int<16> __x1, bit<10> arg1) {
-//      __x1 = 4;
+//  int<16> __ADD_x1 = 2;
+//  foo(inout int<16> __ADD_x1, bit<10> arg1) {
+//      __ADD_x1 = 4;
 //  }
 //  apply {
-//      foo(__x1, 42);
+//      foo(__ADD_x1, 42);
 //  }
 //
-//  The "__" must be appended to avoid shadowing conflicts
+//  The "__ADD_" must be appended to avoid shadowing conflicts.
+//
+// Additionally, these added parameters are handled differently during mlirgen, since
+// they should not follow copy-in/copy-out semantics
 class AddRealActionParams : public PassManager
 {
+ public:
+    static constexpr char ADDED_PREFIX[] = "__ADD_";
+
+ private:
     class Rename : public Transform {
         const P4::ReferenceMap *refMap = nullptr;
         ordered_map<const IR::IDeclaration *, std::string> renamed;
@@ -305,7 +312,7 @@ class AddRealActionParams : public PassManager
 
      private:
         IR::P4Control *preorder(IR::P4Control *control) override {
-            // Rename all out-of-apply local variables to "__" + 'old name'
+            // Rename all out-of-apply local variables to "__ADD_" + 'old name'
             IR::IndexedVector<IR::Declaration> newLocals;
             auto &locals = control->controlLocals;
             std::transform(locals.begin(), locals.end(), std::back_inserter(newLocals),
@@ -315,7 +322,7 @@ class AddRealActionParams : public PassManager
                                }
                                auto *newDecl = decl->clone();
                                std::string oldName = decl->getName().toString().c_str();
-                               std::string newName = std::string("__") + oldName;
+                               std::string newName = std::string(ADDED_PREFIX) + oldName;
                                newDecl->name = IR::ID(newName);
                                BUG_CHECK(!renamed.count(decl), "Declaration renamed twice");
                                renamed.insert({decl, newName});

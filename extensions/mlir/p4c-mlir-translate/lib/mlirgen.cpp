@@ -416,10 +416,18 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
     // At this point written stack allocated variables must be copied back into
     // its original memory
     std::for_each(args->begin(), args->end(), [&](const IR::Argument* arg) {
-        // Only variables that were passed as p4.ref<T> must be copied back
+        // Variables that were not passed as p4.ref<T> are not copied back.
+        // Also arguments that were added during 'AddRealActionParams' do not follow
+        // copy-in/copy-out semantics and therefore do not have to be copied back. Those are
+        // prepended by 'AddRealActionParams::ADDED_PREFIX'
         mlir::Value argVal = valuesTable.getUnchecked(arg);
         if (!isRef(argVal)) {
             return;
+        }
+        if (auto* pe = arg->expression->to<IR::PathExpression>()) {
+            if (pe->path->toString().startsWith(AddRealActionParams::ADDED_PREFIX)) {
+                return;
+            }
         }
         mlir::Value tmpAddr = valuesTable.getAddr(arg);
         auto type = tmpAddr.getType().cast<p4mlir::RefType>().getType();
@@ -442,6 +450,16 @@ void MLIRGenImplCFG::postorder(const IR::Argument* arg) {
     if (!isRef(exprValue)) {
         valuesTable.add(arg, exprValue);
         return;
+    }
+
+    // Arguments that were added during 'AddRealActionParams' do not follow
+    // copy-in/copy-out semantics and therefore do not have to be copied into temporaries.
+    // Those are prepended by 'AddRealActionParams::ADDED_PREFIX'
+    if (auto* pe = arg->expression->to<IR::PathExpression>()) {
+        if (pe->path->toString().startsWith(AddRealActionParams::ADDED_PREFIX)) {
+            valuesTable.addUnchecked(arg, exprValue);
+            return;
+        }
     }
 
     // Stack allocated variable passed as a writeable argument must be copied into

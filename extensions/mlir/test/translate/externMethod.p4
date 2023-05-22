@@ -73,7 +73,7 @@ control Pipe() {
     }
 }
 
-// TODO: pass externs as type params and arguments
+// TODO: pass externs as deduced type params and arguments
 
 // CHECK: module {
 
