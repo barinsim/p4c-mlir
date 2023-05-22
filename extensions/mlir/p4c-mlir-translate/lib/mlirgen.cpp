@@ -358,7 +358,9 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
     }
     else if (auto* externFunc = instance->to<P4::ExternFunction>()) {
         auto name = symbols.getSymbol(externFunc->method);
-        auto* p4RetType = externFunc->method->type->returnType;
+
+        // If relevant, retrieve return value type
+        auto* p4RetType = externFunc->actualMethodType->returnType;
         std::vector<mlir::Type> retTypes;
         if (p4RetType && !p4RetType->is<IR::Type_Void>()) {
             if (auto* typeName = p4RetType->to<IR::Type_Name>()) {
@@ -367,6 +369,7 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
             }
             retTypes.push_back(toMLIRType(builder, p4RetType));
         }
+
         auto callOp = builder.create<p4mlir::CallOp>(loca, retTypes, name, typeOperands, operands);
         if (!callOp->getResults().empty()) {
             valuesTable.addUnchecked(call, callOp.getResult(0));
@@ -379,6 +382,31 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
         BUG_CHECK(call->method->is<IR::Member>(), "Unexpected indirect call");
         mlir::Value base = valuesTable.getAddr(call->method->to<IR::Member>()->expr);
         builder.create<p4mlir::CallApplyOp>(loca, base, operands);
+    }
+    else if (auto* externMethod = instance->to<P4::ExternMethod>()) {
+        auto name = symbols.getSymbol(externMethod->method);
+
+        // If relevant, retrieve return value type
+        auto* p4RetType = externMethod->actualMethodType->returnType;
+        std::vector<mlir::Type> retTypes;
+        if (p4RetType && !p4RetType->is<IR::Type_Void>()) {
+            if (auto* typeName = p4RetType->to<IR::Type_Name>()) {
+                CHECK_NULL(typeName->path);
+                p4RetType = refMap->getDeclaration(typeName->path, true)->to<IR::Type>();
+            }
+            retTypes.push_back(toMLIRType(builder, p4RetType));
+        }
+
+        // Retrieve value of the target object
+        auto* methodRef = call->method->to<IR::Member>();
+        CHECK_NULL(methodRef);
+        mlir::Value target = valuesTable.getAddr(methodRef->expr);
+
+        auto callOp = builder.create<p4mlir::CallMethodOp>(loca, retTypes, target, name,
+                                                           typeOperands, operands);
+        if (!callOp->getResults().empty()) {
+            valuesTable.addUnchecked(call, callOp.getResult(0));
+        }
     }
     else {
         BUG_CHECK(false, "Unsupported call type");
@@ -743,10 +771,19 @@ bool MLIRGenImpl::preorder(const IR::Method* method) {
     std::transform(p4TypeParams.begin(), p4TypeParams.end(), std::back_inserter(typeParams),
                    [](const IR::Type_Var *typeVar) { return typeVar->getVarName().c_str(); });
 
+    // Generate MLIR func type of this method/function
+    auto funcType = toMLIRType(builder, typeMap->getType(method, true)).cast<mlir::FunctionType>();
+
+    // Check if this method is extern constructor, for which we generate different op
+    auto* ext = findContext<IR::Type_Extern>();
+    if (ext && ext->getName().toString() == method->getName().toString()) {
+        BUG_CHECK(typeParams.empty(), "Unexpected type parameters for extern constructor");
+        builder.create<p4mlir::ConstructorOp>(loc(builder, method), newName, funcType);
+        return false;
+    }
+
     // Create ExternOp
-    auto funcType = toMLIRType(builder, typeMap->getType(method, true));
-    auto actOp = builder.create<p4mlir::ExternOp>(loc(builder, method), newName,
-                                                  funcType.cast<mlir::FunctionType>(),
+    auto actOp = builder.create<p4mlir::ExternOp>(loc(builder, method), newName, funcType,
                                                   builder.getStrArrayAttr(typeParams));
     return false;
 }
@@ -919,7 +956,7 @@ bool MLIRGenImpl::preorder(const IR::Declaration* decl) {
     auto saved = builder.saveInsertionPoint();
     builder.setInsertionPointToStart(&initBlock);
 
-    // Generate p4.self (might be needed if member const variables are used in constructor)
+    // Generate p4.self (might be needed if member/global const variables are used in constructor)
     BlockContext context = findContext<IR::IContainer>();
     std::optional<mlir::Value> selfValue;
     if (context) {
@@ -945,8 +982,23 @@ bool MLIRGenImpl::preorder(const IR::Declaration* decl) {
         });
     }
 
-    // Generate the p4.init terminator and pass the generated arguments into it
-    builder.create<p4mlir::InitOp>(loc(builder, decl), argValues, type);
+    // Generate the p4.init terminator and pass the generated arguments into it.
+    // If the declared type is extern class, we also add the name of the used constructor
+    if (type.isa<p4mlir::ExternClassType>()) {
+        auto* p4type = typeMap->getType(decl, true);
+        if (auto* specialized = p4type->to<IR::Type_SpecializedCanonical>()) {
+            p4type = specialized->substituted;
+        }
+        auto* ext = p4type->to<IR::Type_Extern>();
+        auto* declInstance = decl->to<IR::Declaration_Instance>();
+        CHECK_NULL(ext, declInstance);
+        auto* ctrMethod = ext->lookupConstructor(declInstance->arguments);
+        CHECK_NULL(ctrMethod);
+        auto symbol = symbols.getSymbol(ctrMethod);
+        builder.create<p4mlir::InitOp>(loc(builder, decl), symbol, argValues, type);
+    } else {
+        builder.create<p4mlir::InitOp>(loc(builder, decl), argValues, type);
+    }
 
     builder.restoreInsertionPoint(saved);
     return false;

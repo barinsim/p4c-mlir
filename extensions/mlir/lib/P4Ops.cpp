@@ -38,7 +38,7 @@ void buildFuncLikeOp(mlir::OpBuilder &builder, mlir::OperationState &state, llvm
                                                         OpType::getResAttrsAttrName(state.name));
 }
 
-// Find the closes parent ModuleOp, starting from 'from'
+// Find the closest parent ModuleOp, starting from 'from'
 mlir::ModuleOp getParentModule(Operation* from) {
     auto moduleOp = from->getParentOfType<mlir::ModuleOp>();
     if (!moduleOp) {
@@ -192,7 +192,6 @@ mlir::ParseResult ActionOp::parse(mlir::OpAsmParser &parser, mlir::OperationStat
     return mlir::failure();
 }
 
-
 void ActionOp::build(mlir::OpBuilder &builder, mlir::OperationState &state, llvm::StringRef name,
                      mlir::FunctionType type, llvm::ArrayRef<mlir::NamedAttribute> attrs,
                      llvm::ArrayRef<mlir::DictionaryAttr> argAttrs) {
@@ -235,14 +234,18 @@ mlir::LogicalResult CallOp::verifySymbolUses(::mlir::SymbolTableCollection& symb
                              << "' does not reference a valid callable";
     }
 
-    // TODO: check template method calls
+    // TODO: check template function calls
     std::vector<mlir::Type> types;
     std::copy(func.getArgumentTypes().begin(), func.getArgumentTypes().end(),
               std::back_inserter(types));
     std::copy(func.getResultTypes().begin(), func.getResultTypes().end(),
               std::back_inserter(types));
-    if (std::any_of(types.begin(), types.end(),
-                    [](mlir::Type type) { return type.isa<p4mlir::TypeVarType>(); })) {
+    if (std::any_of(types.begin(), types.end(), [](mlir::Type type) {
+            if (type.isa<p4mlir::RefType>()) {
+                type = type.cast<p4mlir::RefType>().getType();
+            }
+            return type.isa<p4mlir::TypeVarType>();
+        })) {
         return mlir::success();
     }
 
@@ -267,6 +270,106 @@ mlir::LogicalResult CallOp::verifySymbolUses(::mlir::SymbolTableCollection& symb
     }
 
     return mlir::success();
+}
+
+void CallMethodOp::print(mlir::OpAsmPrinter &printer) {
+    printer << ' ';
+    printer << getBase();
+    printer << ' ';
+    printer.printAttributeWithoutType(getCalleeAttr());
+    auto typeOperands = getTypeOperands();
+    if (typeOperands) {
+        printer << '<';
+        printer.printType(typeOperands->begin()->cast<mlir::TypeAttr>().getValue());
+        std::for_each(typeOperands->begin() + 1, typeOperands->end(), [&](mlir::Attribute attr) {
+            printer << ", ";
+            printer.printType(attr.cast<TypeAttr>().getValue());
+        });
+        printer << '>';
+    }
+    printer << "(";
+    printer << getOpers();
+    printer << ")";
+    ::llvm::SmallVector<::llvm::StringRef, 2> elidedAttrs;
+    elidedAttrs.push_back("callee");
+    elidedAttrs.push_back("type_operands");
+    printer.printOptionalAttrDict((*this)->getAttrs(), elidedAttrs);
+    printer << " : ";
+    printer.printFunctionalType(getOperands().getTypes(), getOperation()->getResultTypes());
+}
+
+mlir::ParseResult CallMethodOp::parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {
+    // TODO:
+    return mlir::failure();
+}
+
+mlir::LogicalResult CallMethodOp::verifySymbolUses(::mlir::SymbolTableCollection& symbolTable) {
+    // Verify that the callee symbol is in scope.
+    // Referenced 'callee' symbol is assumed
+    // to be fully qualified within the closest parent module
+    auto callee = getCalleeAttr();
+    auto func = symbolTable.lookupNearestSymbolFrom<mlir::FunctionOpInterface>(
+        getParentModule(*this), callee);
+    if (!func) {
+        return emitOpError() << "'" << callee.getNestedReferences()
+                             << "' does not reference a valid callable";
+    }
+
+    // TODO: check template method calls
+    std::vector<mlir::Type> types;
+    std::copy(func.getArgumentTypes().begin(), func.getArgumentTypes().end(),
+              std::back_inserter(types));
+    std::copy(func.getResultTypes().begin(), func.getResultTypes().end(),
+              std::back_inserter(types));
+    if (std::any_of(types.begin(), types.end(), [](mlir::Type type) {
+            if (type.isa<p4mlir::RefType>()) {
+                type = type.cast<p4mlir::RefType>().getType();
+            }
+            return type.isa<p4mlir::TypeVarType>();
+        })) {
+        return mlir::success();
+    }
+
+    // Verify that the operand types match the callee
+    mlir::TypeRange args = getOpers().getTypes();
+    mlir::TypeRange params = func.getArgumentTypes();
+    if (args.size() != params.size()) {
+        return emitOpError("incorrect number of operands for callee");
+    }
+    if (args != params) {
+        return emitOpError("argument types do not match the parameter types");
+    }
+
+    // Verify that the result types match the callee
+    mlir::TypeRange callResults = getResults().getTypes();
+    mlir::TypeRange funcResults = func.getFunctionType().cast<mlir::FunctionType>().getResults();
+    if (callResults.size() != funcResults.size()) {
+        return emitOpError("incorrect number of results for callee");
+    }
+    if (callResults != funcResults) {
+        return emitOpError("call return types do not match the declared return types");
+    }
+
+    return mlir::success();
+}
+
+void ConstructorOp::print(mlir::OpAsmPrinter &printer) {
+    printer << ' ';
+    printer.printSymbolName(getSymName());
+    auto type = getFunctionType();
+    function_interface_impl::printFunctionSignature(printer, *this, type.getInputs(), false,
+                                                    type.getResults());
+}
+
+mlir::ParseResult ConstructorOp::parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {
+    // TODO:
+    return mlir::failure();
+}
+
+void ConstructorOp::build(mlir::OpBuilder &builder, mlir::OperationState &state, llvm::StringRef name,
+                     mlir::FunctionType type, llvm::ArrayRef<mlir::NamedAttribute> attrs,
+                     llvm::ArrayRef<mlir::DictionaryAttr> argAttrs) {
+    buildFuncLikeOp<ConstructorOp>(builder, state, name, type, attrs, argAttrs);
 }
 
 } // namespace p4mlir

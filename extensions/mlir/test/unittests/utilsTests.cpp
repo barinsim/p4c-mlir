@@ -51,7 +51,7 @@ TEST_F(MakeFullyQualifiedSymbols, Test_all_referenceable_constructs) {
 
     auto ctxt = createMLIRContext();
     p4mlir::FullyQualifiedSymbols symbols;
-    p4mlir::MakeFullyQualifiedSymbols makeSymbols(*ctxt.builder, symbols);
+    p4mlir::MakeFullyQualifiedSymbols makeSymbols(*ctxt.builder, symbols, output.typeMap);
     program->apply(makeSymbols);
     auto strs = symbols.getAllAsStrings();
 

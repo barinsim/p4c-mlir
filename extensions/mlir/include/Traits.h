@@ -19,12 +19,7 @@ class Template : public mlir::OpTrait::TraitBase<ConcreteType, Template> {
         }
         if (!op->getRegion(0).hasOneBlock() && !op->getRegion(0).empty()) {
             return op->emitOpError()
-                   << "Operations with a 'Template' must have one or zero block";
-        }
-        if (!op->hasAttrOfType<mlir::ArrayAttr>("type_parameters")) {
-            return op->emitOpError()
-                   << "Operations with a 'Template' must have 'type_parameters' argument "
-                   << "of type 'ArrayRef<mlir::StringAttr>'";
+                   << "Operations with a 'Template' must have one or zero blocks";
         }
         // TODO: checks the params are unique
 
@@ -77,9 +72,11 @@ class Template : public mlir::OpTrait::TraitBase<ConcreteType, Template> {
         // Walk chain of 'Template' ops upwards and remove resolved type variables from the worklist
         Operation* ptr = op;
         while (ptr && ptr->hasTrait<Template>()) {
+            // The 'type_parameters' attribute does not have to exist (e.g. constructors)
             auto typeSymbols = ptr->getAttrOfType<mlir::ArrayAttr>("type_parameters");
+            ptr = ptr->getParentOp();
             if (!typeSymbols) {
-                break;
+                continue;
             }
             for (auto it = typeVars.begin(); it != typeVars.end(); ) {
                 auto attr = mlir::StringAttr::get(op->getContext(), it->getName());
@@ -90,7 +87,6 @@ class Template : public mlir::OpTrait::TraitBase<ConcreteType, Template> {
                     ++it;
                 }
             }
-            ptr = ptr->getParentOp();
         }
 
         if (!typeVars.empty()) {

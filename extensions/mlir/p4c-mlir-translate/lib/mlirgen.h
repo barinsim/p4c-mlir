@@ -284,9 +284,9 @@ class MLIRGen : public PassManager
         passes.push_back(new P4::TypeInference(refMap, typeMap, false, true));
         passes.push_back(new P4::TypeChecking(refMap, typeMap, true));
         passes.push_back(new MakeCFGInfo(*cfgInfo));
-        passes.push_back(new MakeFullyQualifiedSymbols(builder, *symbols));
         passes.push_back(new AllocateVariables(refMap, typeMap, *allocation));
         passes.push_back(new MakeSSAInfo(*ssaInfo, *cfgInfo, *allocation, refMap, typeMap));
+        passes.push_back(new MakeFullyQualifiedSymbols(builder, *symbols, typeMap));
         passes.push_back(
             new MLIRGenImpl(builder, typeMap, refMap, *cfgInfo, *symbols, *ssaInfo, *allocation));
     }

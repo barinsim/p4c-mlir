@@ -104,6 +104,34 @@ def ExternClassOp : P4Op<"extern_class", [Symbol, SymbolTable, NoTerminator, Tem
     let hasCustomAssemblyFormat = 1;
 }
 
+def ConstructorOp : P4Op<"constructor", [Symbol, FunctionOpInterface, Template]> {
+    let arguments = (ins SymbolNameAttr:$sym_name,
+                       TypeAttrOf<FunctionType>:$function_type,
+                       OptionalAttr<StrAttr>:$sym_visibility,
+                       OptionalAttr<DictArrayAttr>:$arg_attrs,
+                       OptionalAttr<DictArrayAttr>:$res_attrs);
+    let regions = (region AnyRegion:$body);
+    let hasCustomAssemblyFormat = 1;
+
+    let builders = [OpBuilder<(ins
+                                "::llvm::StringRef":$name, "FunctionType":$type,
+                                  CArg<"::llvm::ArrayRef<NamedAttribute>", "{}">:$attrs,
+                                  CArg<"::llvm::ArrayRef<DictionaryAttr>", "{}">:$argAttrs)
+                               >];
+
+    let extraClassDeclaration = [{
+        //===------------------------------------------------------------------===//
+        // FunctionOpInterface Methods
+        //===------------------------------------------------------------------===//
+
+        /// Returns the argument types of this function.
+        ::llvm::ArrayRef<::mlir::Type> getArgumentTypes() { return getFunctionType().getInputs(); }
+
+        /// Returns the result types of this function.
+        ::llvm::ArrayRef<::mlir::Type> getResultTypes() { return getFunctionType().getResults(); }
+        }];
+}
+
 def ApplyOp : P4Op<"apply", [HasParent<"ControlOp">]> {
     let regions = (region MinSizedRegion<1>:$body);
     let assemblyFormat = "attr-dict regions";
@@ -170,8 +198,15 @@ def MemberDeclOp : P4Op<"member_decl", [Symbol]> {
 }
 
 def InitOp : P4Op<"init", [Terminator, HasParent<"MemberDeclOp">]> {
-    let arguments = (ins Variadic<AnyType>:$opers, TypeAttr:$type);
-    let assemblyFormat = "attr-dict $type ` ` `(` operands `)` `:` `(` type(operands) `)`";
+    let arguments = (ins OptionalAttr<SymbolRefAttr>:$callee, Variadic<AnyType>:$opers, TypeAttr:$type);
+    let assemblyFormat = "attr-dict ($callee^)? $type ` ` `(` operands `)` `:` `(` type(operands) `)`";
+
+    let builders = [
+        // Convenience builder for missing callee symbol
+        OpBuilder<(ins "::mlir::ValueRange":$operands, "mlir::Type":$type), [{
+                      build($_builder, $_state, {}, operands, type);
+        }]>
+    ];
 }
 
 def ValidBitDeclOp : P4Op<"valid_bit_decl", [Symbol]> {
@@ -296,6 +331,26 @@ def CallOp : P4Op<"call", [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
         OpBuilder<(ins "::mlir::SymbolRefAttr":$callee, "::mlir::ValueRange":$operands), [{
             build($_builder, $_state, {}, callee, mlir::TypeRange{}, operands);
         }]>
+    ];
+}
+
+def CallMethodOp : P4Op<"call_method", [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+    let arguments = (ins AnyType:$base,
+                       SymbolRefAttr:$callee,
+                       OptionalAttr<TypeArrayAttr>:$type_operands,
+                       Variadic<AnyType>:$opers);
+    let results = (outs Variadic<AnyType>);
+    let hasCustomAssemblyFormat = 1;
+
+    let builders = [
+        // Convenience builder from TypeRange for type operands
+        OpBuilder<(ins "::mlir::TypeRange":$resultTypes, "::mlir::Value":$base, "::mlir::SymbolRefAttr":$callee, "::mlir::TypeRange":$type_operands, "::mlir::ValueRange":$operands), [{
+            if (type_operands.empty()) {
+                build($_builder, $_state, resultTypes, base, callee, mlir::ArrayAttr{{}}, operands);
+                return;
+            }
+            build($_builder, $_state, resultTypes, base, callee, $_builder.getTypeArrayAttr(type_operands), operands);
+        }]>,
     ];
 }
 

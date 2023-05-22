@@ -136,14 +136,15 @@ using ReferenceableNode = std::variant<const IR::P4Action *, const IR::Method *,
 using SymbolParts = std::vector<mlir::StringAttr>;
 
 // Stores the fully qualified symbols within a ModuleOp
-class FullyQualifiedSymbols {
+class FullyQualifiedSymbols
+{
     ordered_map<ReferenceableNode, mlir::SymbolRefAttr> data;
 
  public:
     void add(ReferenceableNode node, const SymbolParts &parts) {
-        BUG_CHECK(!data.count(node), "Node is already resolved");
         BUG_CHECK(!parts.empty(), "Symbol is empty");
 
+        // Create symbol out of strings
         std::vector<mlir::FlatSymbolRefAttr> tail;
         std::transform(parts.begin() + 1, parts.end(), std::back_inserter(tail),
                        [](auto &part) { return mlir::FlatSymbolRefAttr::get(part); });
@@ -154,6 +155,12 @@ class FullyQualifiedSymbols {
         } else {
             symbol = mlir::SymbolRefAttr::get(root, tail);
         }
+
+        if (data.count(node)) {
+            BUG_CHECK(data.at(node) == symbol,
+                      "Node already exists and the added symbol is not duplicate");
+        }
+
         data.insert({node, symbol});
     }
 
@@ -186,8 +193,11 @@ class FullyQualifiedSymbols {
 // Fills 'FullyQualifiedSymbols' container.
 // Creates fully qualified names for P4 constructs that are referenceable by a symbol
 // within a P4 dialect. P4 dialect assumes that all symbol references are fully qualified
-class MakeFullyQualifiedSymbols : public Inspector {
+class MakeFullyQualifiedSymbols : public Inspector
+{
     mlir::OpBuilder &builder;
+
+    const P4::TypeMap* typeMap = nullptr;
 
     // Output of this pass
     FullyQualifiedSymbols &symbols;
@@ -198,8 +208,11 @@ class MakeFullyQualifiedSymbols : public Inspector {
     SymbolParts currentScope;
 
  public:
-    MakeFullyQualifiedSymbols(mlir::OpBuilder &builder_, FullyQualifiedSymbols &symbols_)
-        : builder(builder_), symbols(symbols_) {}
+    MakeFullyQualifiedSymbols(mlir::OpBuilder &builder_, FullyQualifiedSymbols &symbols_,
+                              const P4::TypeMap *typeMap_)
+        : builder(builder_), symbols(symbols_), typeMap(typeMap_) {
+        CHECK_NULL(typeMap_);
+    }
 
  private:
     bool preorder(const IR::P4Control *control) override {
@@ -238,6 +251,17 @@ class MakeFullyQualifiedSymbols : public Inspector {
     }
 
     void postorder(const IR::Type_Extern *) override { currentScope.pop_back(); }
+
+    bool preorder(const IR::Declaration_Instance* decl) override {
+        // Instantiated externs are not visited by default.
+        // Visit them when we encounter their instantiations
+        auto* type = typeMap->getType(decl, true);
+        auto saved = currentScope;
+        currentScope.clear();
+        visit(type);
+        currentScope = saved;
+        return true;
+    }
 
     // Convenience method to add symbol part to the end of the 'currentScope'
     void addToCurrentScope(ReferenceableNode node) {

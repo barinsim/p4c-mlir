@@ -92,7 +92,7 @@ action foo() {
 // CHECK-NEXT: p4.store(%31, %32) : (!p4.ref<si40>, si40) -> ()
 // CHECK-NEXT: %33 = p4.constant 9 : si64
 // CHECK-NEXT: %34 = p4.cast(%33) : si64 -> si40
-// CHECK-NEXT: %35 = p4.call @foo_3<si40, si40>(%30, %31, %34) : (!p4.ref<si40>, !p4.ref<si40>, si40) -> !p4.type_var<@M>
+// CHECK-NEXT: %35 = p4.call @foo_3<si40, si40>(%30, %31, %34) : (!p4.ref<si40>, !p4.ref<si40>, si40) -> si40
 // CHECK-NEXT: %36 = p4.load(%30) : !p4.ref<si40> -> si40
 // CHECK-NEXT: p4.store(%29, %36) : (!p4.ref<si40>, si40) -> ()
 // CHECK-NEXT: %37 = p4.load(%31) : !p4.ref<si40> -> si40
