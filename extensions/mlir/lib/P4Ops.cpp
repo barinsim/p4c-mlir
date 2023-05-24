@@ -372,4 +372,63 @@ void ConstructorOp::build(mlir::OpBuilder &builder, mlir::OperationState &state,
     buildFuncLikeOp<ConstructorOp>(builder, state, name, type, attrs, argAttrs);
 }
 
+void TableOp::print(mlir::OpAsmPrinter &printer) {
+    auto tableName = getSymNameAttr().getValue();
+    printer << ' ';
+    printer.printSymbolName(tableName);
+
+    auto printArgs = [&](auto first, auto end) {
+        printer << '(';
+        while (first != end) {
+            printer.printRegionArgument(*first);
+            ++first;
+            if (first != end) {
+                printer.getStream() << ", ";
+            }
+        }
+        printer << ')';
+    };
+
+    // Print apply arguments
+    auto args = getBody().getArguments();
+    printArgs(args.begin(), args.end());
+
+    printer << ' ';
+    printer.printRegion(getBody(), false, true);
+}
+
+mlir::ParseResult TableOp::parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {
+    // TODO:
+    return mlir::failure();
+}
+
+void TablePropertyOp::print(mlir::OpAsmPrinter &printer) {
+    auto tableName = getSymNameAttr().getValue();
+    printer << ' ';
+    printer.printSymbolName(tableName);
+    printer << ' ';
+    printer.printRegion(getBody(), false, true);
+}
+
+mlir::ParseResult TablePropertyOp::parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {
+    // TODO:
+    return mlir::failure();
+}
+
+mlir::ParseResult TableActionOp::parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {
+    // TODO:
+    return mlir::failure();
+}
+
+void TableActionOp::print(mlir::OpAsmPrinter &printer) {
+    printer << ' ';
+    auto tableName = getActionNameAttr();
+    if (tableName) {
+        printer.printAttributeWithoutType(tableName);
+    }
+    if (!getBody().empty()) {
+        printer.printRegion(getBody(), false, true);
+    }
+}
+
 } // namespace p4mlir

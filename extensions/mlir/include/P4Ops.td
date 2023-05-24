@@ -40,6 +40,37 @@ def ControlOp : P4Op<"control", [Symbol, SymbolTable, IsolatedFromAbove, NoTermi
     let hasCustomAssemblyFormat = 1;
 }
 
+def TableOp : P4Op<"table", [Symbol, SymbolTable, NoTerminator]> {
+    let arguments = (ins SymbolNameAttr:$sym_name,
+                       TypeAttrOf<FunctionType>:$apply_type);
+    let regions = (region SizedRegion<1>:$body);
+    let hasCustomAssemblyFormat = 1;
+}
+
+def TablePropertyOp : P4Op<"table_property", [Symbol]> {
+    let arguments = (ins SymbolNameAttr:$sym_name);
+    let regions = (region AnyRegion:$body);
+    let hasCustomAssemblyFormat = 1;
+}
+
+def TableActionsListOp : P4Op<"table_actions_list", [NoTerminator]> {
+    let regions = (region SizedRegion<1>:$body);
+    let assemblyFormat = "attr-dict regions";
+}
+
+def TableActionOp : P4Op<"table_action", [NoTerminator]> {
+    let arguments = (ins OptionalAttr<SymbolRefAttr>:$action_name);
+    let regions = (region AnyRegion:$body);
+    let hasCustomAssemblyFormat = 1;
+
+    let builders = [
+        // Convenience builder without the symbol reference
+        OpBuilder<(ins), [{
+            build($_builder, $_state, {});
+        }]>
+    ];
+}
+
 def ActionOp : P4Op<"action", [Symbol, FunctionOpInterface]> {
     let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<FunctionType>:$function_type,
@@ -197,7 +228,7 @@ def MemberDeclOp : P4Op<"member_decl", [Symbol]> {
     let assemblyFormat = "attr-dict $sym_name `:` $type ($initializer^)?";
 }
 
-def InitOp : P4Op<"init", [Terminator, HasParent<"MemberDeclOp">]> {
+def InitOp : P4Op<"init", [Terminator, ParentOneOf<["MemberDeclOp", "TablePropertyOp"]>]> {
     let arguments = (ins OptionalAttr<SymbolRefAttr>:$callee, Variadic<AnyType>:$opers, TypeAttr:$type);
     let assemblyFormat = "attr-dict ($callee^)? $type ` ` `(` operands `)` `:` `(` type(operands) `)`";
 

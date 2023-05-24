@@ -162,11 +162,11 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
     // otherwise a terminator will not be able to map the successors onto MLIR blocks properly.
     // If 'bb' is nullptr, asserts no branching terminators are visited (useful for generating
     // arguments for instantiations)
-    void apply(const IR::StatOrDecl* stmt, BasicBlock* bb = nullptr) {
-        CHECK_NULL(stmt);
+    void apply(const IR::Node* node, BasicBlock* bb = nullptr) {
+        CHECK_NULL(node);
         currBlock = bb;
         customApplyCalled = true;
-        stmt->apply(*this);
+        node->apply(*this);
         customApplyCalled = false;
     }
 
@@ -259,6 +259,11 @@ class MLIRGenImpl : public Inspector
     bool preorder(const IR::Type_Extern* ext) override;
     bool preorder(const IR::StructField* field) override;
     bool preorder(const IR::Declaration* decl) override;
+    bool preorder(const IR::P4Table* table) override;
+    bool preorder(const IR::ExpressionValue* exprVal) override;
+    bool preorder(const IR::ActionList* actionsList) override;
+    bool preorder(const IR::ActionListElement* actionElement) override;
+    bool preorder(const IR::ExpressionListValue*) override;
 
     // Generates MLIR for CFG of 'decl', MLIR blocks are inserted into 'targetRegion'.
     // CFG must be accessible through `cfg['decl']`

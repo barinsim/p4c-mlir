@@ -209,6 +209,7 @@ class MakeSSAInfo : public Inspector
  private:
     bool preorder(const IR::P4Control* control) override;
     bool preorder(const IR::P4Action* action) override;
+    bool preorder(const IR::PathExpression* pe) override;
     bool preorder(const IR::Declaration_Instance* decl) override;
     bool preorder(const IR::Declaration_Constant* decl) override;
 

@@ -109,9 +109,9 @@ bool AllocateVariables::preorder(const IR::Parameter* param) {
 }
 
 bool AllocateVariables::preorder(const IR::P4Control* control) {
-    // Allocate out-of-apply local declarations to STACK
-    // TODO: This is too conservative, if the variable is not written in any of the action, it can
-    // have REG allocation
+    // Allocate out-of-apply local declarations to STACK.
+    // This is overly conservative, but simplifies many things, like referencing these variables
+    // within table declarations
     auto& decls = control->controlLocals;
     std::for_each(decls.begin(), decls.end(), [&](const IR::IDeclaration* decl) {
         if (decl->is<IR::Declaration_Variable>()) {
@@ -327,6 +327,40 @@ bool MakeSSAInfo::preorder(const IR::P4Action* action) {
 
     // Number action body
     traverseCFG(regParams, cfgInfo.get(action));
+
+    return true;
+}
+
+bool MakeSSAInfo::preorder(const IR::PathExpression* pe) {
+    // REG references within table declarations can either be constructor params or IN-direction
+    // apply params of the enclosing P4Control. None of those variables can be written within the
+    // control block. This means the references can be simply assigned the same SSA number which was
+    // assigned to the declaration. This applies because the out-of-apply local declarations are
+    // currently getting STACK allocation
+    auto* type = typeMap->getType(pe, true);
+    if (findContext<IR::P4Table>() && isPrimitiveType(type)) {
+        CHECK_NULL(pe->path);
+        auto* decl = refMap->getDeclaration(pe->path, true);
+        if (allocation.get(decl) != AllocType::REG) {
+            return true;
+        }
+
+        // Check the assumptions under which this SSA numbering algorithm works
+        auto* control = findContext<IR::P4Control>();
+        CHECK_NULL(control);
+        auto& applyParams = control->getApplyParameters()->parameters;
+        auto& ctrParams = control->getConstructorParameters()->parameters;
+        std::vector<const IR::Parameter*> allParams;
+        std::copy(applyParams.begin(), applyParams.end(), std::back_inserter(allParams));
+        std::copy(ctrParams.begin(), ctrParams.end(), std::back_inserter(allParams));
+        bool isParam = std::any_of(allParams.begin(), allParams.end(),
+                                   [&](const IR::Parameter *param) { return param == decl; });
+        BUG_CHECK(isParam, "Reference of a P4Control apply/ctr parameter expected");
+
+        // Retrieve and assign the SSA numbering that was assigned to the declaration
+        ID ssaID = ssaInfo.getID(decl);
+        ssaInfo.numberRef(ssaID, pe);
+    }
 
     return true;
 }
