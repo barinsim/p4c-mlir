@@ -129,8 +129,9 @@ class BlockContext {
 };
 
 // Represents all P4 constructs that can be referenced by an MLIR symbol within the P4 dialect
-using ReferenceableNode = std::variant<const IR::P4Action *, const IR::Method *,
-                                       const IR::P4Control *, const IR::Type_Extern *>;
+using ReferenceableNode =
+    std::variant<const IR::P4Action *, const IR::Method *, const IR::P4Control *,
+                 const IR::Type_Extern *, const IR::Declaration_ID *>;
 
 // Represents isolated parts of the fully qualified symbol
 using SymbolParts = std::vector<mlir::StringAttr>;
@@ -251,6 +252,14 @@ class MakeFullyQualifiedSymbols : public Inspector
     }
 
     void postorder(const IR::Type_Extern *) override { currentScope.pop_back(); }
+
+    bool preorder(const IR::Declaration_ID* declID) override {
+        addToCurrentScope(declID);
+        symbols.add(declID, currentScope);
+        return true;
+    }
+
+    void postorder(const IR::Declaration_ID *) override { currentScope.pop_back(); }
 
     bool preorder(const IR::Declaration_Instance* decl) override {
         // Instantiated externs are not visited by default.

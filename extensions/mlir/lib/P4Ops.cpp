@@ -10,6 +10,7 @@
 #include "mlir/IR/BuiltinOps.h"
 
 #include "P4OpsEnumAttr.cpp.inc"
+#define GET_ATTRDEF_CLASSES
 #include "P4OpsAttr.cpp.inc"
 #define GET_OP_CLASSES
 #include "P4Ops.cpp.inc"
@@ -429,6 +430,19 @@ void TableActionOp::print(mlir::OpAsmPrinter &printer) {
     if (!getBody().empty()) {
         printer.printRegion(getBody(), false, true);
     }
+}
+
+mlir::LogicalResult TableKeyOp::verifySymbolUses(::mlir::SymbolTableCollection& symbolTable) {
+    // Verify that the name of the match kind is in scope
+    auto matchKind = getMatchKind();
+    auto matchKindDecl = symbolTable.lookupNearestSymbolFrom<p4mlir::MatchKindOp>(
+        getParentModule(*this), matchKind);
+    if (!matchKind) {
+        return emitOpError() << "'" << matchKind
+                             << "' does not reference a valid match kind";
+    }
+
+    return mlir::success();
 }
 
 } // namespace p4mlir

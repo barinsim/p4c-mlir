@@ -520,8 +520,9 @@ void MLIRGenImplCFG::postorder(const IR::Argument* arg) {
 void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
     auto* type = typeMap->getType(pe, true);
 
-    // Function/method reference does not generate any ops and can be skipped
-    if (type->is<IR::Type_MethodBase>()) {
+    // Function/method reference and match kind reference does not generate any ops and can be
+    // skipped
+    if (type->is<IR::Type_MethodBase>() || type->is<IR::Type_MatchKind>()) {
         return;
     }
 
@@ -1046,6 +1047,10 @@ bool MLIRGenImpl::preorder(const IR::P4Table* table) {
     return false;
 }
 
+bool MLIRGenImpl::preorder(const IR::Property* property) {
+    return true;
+}
+
 bool MLIRGenImpl::preorder(const IR::ExpressionValue* exprVal) {
     // Create TablePropertyOp and insert 1 block
     llvm::StringRef name = findContext<IR::Property>()->getName().toString().c_str();
@@ -1125,6 +1130,62 @@ bool MLIRGenImpl::preorder(const IR::ActionListElement* actionElement) {
     cfgMLIRGen->apply(actionElement->expression);
 
     builder.restoreInsertionPoint(saved);
+    return false;
+}
+
+bool MLIRGenImpl::preorder(const IR::Key* keyList) {
+    // Create TanbleKeysListOp and insert 1 block
+    auto keysOp = builder.create<p4mlir::TableKeysListOp>(loc(builder, keyList));
+    auto saved = builder.saveInsertionPoint();
+    auto& body = keysOp.getBody().emplaceBlock();
+    builder.setInsertionPointToEnd(&body);
+
+    // Generate key elements
+    visit(keyList->keyElements);
+
+    builder.restoreInsertionPoint(saved);
+    return true;
+}
+
+bool MLIRGenImpl::preorder(const IR::KeyElement* key) {
+    // Retrieve matchKind symbol reference
+    CHECK_NULL(key->matchType->path);
+    auto *matchKindDecl =
+        refMap->getDeclaration(key->matchType->path, true)->to<IR::Declaration_ID>();
+    auto matchKindSymbol = symbols.getSymbol(matchKindDecl);
+
+    // Create TanbleKeyOp and insert 1 block
+    auto keysOp = builder.create<p4mlir::TableKeyOp>(loc(builder, key), matchKindSymbol);
+    auto saved = builder.saveInsertionPoint();
+    auto& body = keysOp.getBody().emplaceBlock();
+    builder.setInsertionPointToEnd(&body);
+
+    // Generate p4.self (might be needed if member/global variables are used)
+    auto* control = findContext<IR::P4Control>();
+    CHECK_NULL(control);
+    mlir::Value selfValue =
+        generateSelfValue(loc(builder, key), builder, control).value();
+
+    // Generate the inner expression
+    CHECK_NULL(key->expression);
+    auto* cfgMLIRGen = createCFGVisitor(selfValue);
+    cfgMLIRGen->apply(key);
+
+    // Create InitOp and pass the generated value into it
+    std::vector<mlir::Value> value = {valuesTable.getUnchecked(key->expression)};
+    auto type = toMLIRType(builder, typeMap->getType(key->expression, true));
+    builder.create<p4mlir::InitOp>(loc(builder, key), value, type);
+
+    builder.restoreInsertionPoint(saved);
+    return true;
+}
+
+bool MLIRGenImpl::preorder(const IR::Declaration_MatchKind* matchKinds) {
+    auto& elems = matchKinds->members;
+    std::for_each(elems.begin(), elems.end(), [&](const IR::Declaration_ID* decl) {
+        llvm::StringRef name = decl->getName().toString().c_str();
+        builder.create<p4mlir::MatchKindOp>(loc(builder, decl), name);
+    });
     return false;
 }
 

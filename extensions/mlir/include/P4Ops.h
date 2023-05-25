@@ -14,9 +14,10 @@
 
 using namespace ::mlir;
 
-#define GET_TYPEDEF_CLASSES
+#define GET_ATTRDEF_CLASSES
 #include "P4OpsAttr.h.inc"
 #include "P4OpsEnumAttr.h.inc"
+#define GET_TYPEDEF_CLASSES
 #include "P4OpsTypes.h.inc"
 #include "Traits.h"
 #define GET_OP_CLASSES

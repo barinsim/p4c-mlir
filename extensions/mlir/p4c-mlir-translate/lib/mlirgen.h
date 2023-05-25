@@ -260,10 +260,14 @@ class MLIRGenImpl : public Inspector
     bool preorder(const IR::StructField* field) override;
     bool preorder(const IR::Declaration* decl) override;
     bool preorder(const IR::P4Table* table) override;
+    bool preorder(const IR::Property* property) override;
     bool preorder(const IR::ExpressionValue* exprVal) override;
     bool preorder(const IR::ActionList* actionsList) override;
     bool preorder(const IR::ActionListElement* actionElement) override;
-    bool preorder(const IR::ExpressionListValue*) override;
+    bool preorder(const IR::Key* keyList) override;
+    bool preorder(const IR::KeyElement* key) override;
+    bool preorder(const IR::ExpressionListValue* exprList) override;
+    bool preorder(const IR::Declaration_MatchKind* matchKinds) override;
 
     // Generates MLIR for CFG of 'decl', MLIR blocks are inserted into 'targetRegion'.
     // CFG must be accessible through `cfg['decl']`

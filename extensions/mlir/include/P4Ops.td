@@ -71,6 +71,22 @@ def TableActionOp : P4Op<"table_action", [NoTerminator]> {
     ];
 }
 
+def TableKeysListOp : P4Op<"table_keys_list", [NoTerminator]> {
+    let regions = (region SizedRegion<1>:$body);
+    let assemblyFormat = "attr-dict regions";
+}
+
+def TableKeyOp : P4Op<"table_key", [DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+    let arguments = (ins SymbolRefAttr:$match_kind);
+    let regions = (region MinSizedRegion<1>:$body);
+    let assemblyFormat = "attr-dict `match` $match_kind regions";
+}
+
+def MatchKindOp : P4Op<"match_kind", [Symbol]> {
+    let arguments = (ins SymbolNameAttr:$sym_name);
+    let assemblyFormat = "attr-dict $sym_name";
+}
+
 def ActionOp : P4Op<"action", [Symbol, FunctionOpInterface]> {
     let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<FunctionType>:$function_type,
@@ -228,7 +244,7 @@ def MemberDeclOp : P4Op<"member_decl", [Symbol]> {
     let assemblyFormat = "attr-dict $sym_name `:` $type ($initializer^)?";
 }
 
-def InitOp : P4Op<"init", [Terminator, ParentOneOf<["MemberDeclOp", "TablePropertyOp"]>]> {
+def InitOp : P4Op<"init", [Terminator, ParentOneOf<["MemberDeclOp", "TablePropertyOp", "TableKeyOp"]>]> {
     let arguments = (ins OptionalAttr<SymbolRefAttr>:$callee, Variadic<AnyType>:$opers, TypeAttr:$type);
     let assemblyFormat = "attr-dict ($callee^)? $type ` ` `(` operands `)` `:` `(` type(operands) `)`";
 
