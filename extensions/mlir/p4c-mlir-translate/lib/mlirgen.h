@@ -192,7 +192,9 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
     void postorder(const IR::MethodCallExpression* call) override;
     void postorder(const IR::Argument* arg) override;
     void postorder(const IR::PathExpression* pe) override;
-    void postorder(const IR::StructExpression* pe) override;
+    void postorder(const IR::StructExpression* se) override;
+    void postorder(const IR::ListExpression* le) override;
+    void postorder(const IR::DefaultExpression* de) override;
 
     // --- Arithmetic Operators ---
     void postorder(const IR::Add* add) override;
@@ -275,6 +277,8 @@ class MLIRGenImpl : public Inspector
     bool preorder(const IR::ExpressionValue* exprVal) override;
     bool preorder(const IR::ActionList* actionsList) override;
     bool preorder(const IR::ActionListElement* actionElement) override;
+    bool preorder(const IR::EntriesList* entriesList) override;
+    bool preorder(const IR::Entry* entry) override;
     bool preorder(const IR::Key* keyList) override;
     bool preorder(const IR::KeyElement* key) override;
     bool preorder(const IR::ExpressionListValue* exprList) override;
@@ -286,6 +290,11 @@ class MLIRGenImpl : public Inspector
 
     // Convenience method to create 'MLIRGenImplCFG' from private member variables
     MLIRGenImplCFG* createCFGVisitor(std::optional<mlir::Value> selfValue);
+
+    // Given 'expr' builds TableActionOp including its body.
+    // TableActionOp is needed to be built from multiple different AST nodes.
+    // This simplifies the process
+    TableActionOp buildTableActionOp(const IR::Expression* expr);
 };
 
 // Main pass of the P4 AST -> P4 MLIR dialect translation

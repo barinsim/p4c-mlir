@@ -31,6 +31,12 @@ def ConstantOp : P4Op<"constant"> {
     ];
 }
 
+def ControlPlaneValueOp : P4Op<"control_plane_value"> {
+    let arguments = (ins TypeAttr:$type);
+    let results = (outs AnyType:$result);
+    let hasCustomAssemblyFormat = 1;
+}
+
 def ControlOp : P4Op<"control", [Symbol, SymbolTable, IsolatedFromAbove, NoTerminator]> {
     let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<FunctionType>:$apply_type,
@@ -50,6 +56,33 @@ def TableOp : P4Op<"table", [Symbol, SymbolTable, NoTerminator]> {
 def TablePropertyOp : P4Op<"table_property", [Symbol]> {
     let arguments = (ins SymbolNameAttr:$sym_name);
     let regions = (region AnyRegion:$body);
+    let hasCustomAssemblyFormat = 1;
+}
+
+def TableEntriesListOp : P4Op<"table_entries_list", [NoTerminator]> {
+    let regions = (region SizedRegion<1>:$body);
+    let assemblyFormat = "attr-dict regions";
+}
+
+def TableEntryOp : P4Op<"table_entry", [NoTerminator]> {
+    let regions = (region SizedRegion<1>:$body);
+    let assemblyFormat = "attr-dict regions";
+}
+
+def TableEntryKeysOp : P4Op<"table_entry_keys", [HasParent<"TableEntryOp">]> {
+    let regions = (region AnyRegion:$body);
+    let assemblyFormat = "attr-dict regions";
+}
+
+def TupleOp : P4Op<"tuple"> {
+    let arguments = (ins Variadic<AnyType>:$values);
+    let results = (outs Builtin_Tuple:$result);
+    let assemblyFormat = "attr-dict `(` operands `)` `:` functional-type(operands, results)";
+}
+
+def DontcareOp : P4Op<"dontcare"> {
+    let arguments = (ins TypeAttr:$type);
+    let results = (outs AnyType:$result);
     let hasCustomAssemblyFormat = 1;
 }
 
@@ -249,7 +282,7 @@ def MemberDeclOp : P4Op<"member_decl", [Symbol]> {
     let assemblyFormat = "attr-dict $sym_name `:` $type ($initializer^)?";
 }
 
-def InitOp : P4Op<"init", [Terminator, ParentOneOf<["MemberDeclOp", "TablePropertyOp", "TableKeyOp"]>]> {
+def InitOp : P4Op<"init", [Terminator, ParentOneOf<["MemberDeclOp", "TablePropertyOp", "TableKeyOp", "TableEntryKeysOp"]>]> {
     let arguments = (ins OptionalAttr<SymbolRefAttr>:$callee, Variadic<AnyType>:$opers, TypeAttr:$type);
     let assemblyFormat = "attr-dict ($callee^)? $type ` ` `(` operands `)` `:` `(` type(operands) `)`";
 
@@ -284,7 +317,6 @@ class ArithmeticOperator<string mnemonic, list<Trait> traits = []>
 def AddOp : ArithmeticOperator<"add"> {}
 def SubOp : ArithmeticOperator<"sub"> {}
 def MulOp : ArithmeticOperator<"mul"> {}
-
 
 // TODO: move to separate types file
 class P4Dialect_Type<string name, string typeMnemonic, list<Trait> traits = []>
@@ -322,6 +354,8 @@ def TableType : P4Dialect_Type<"Table", "table"> {
     let parameters = (ins StringRefParameter<"Table type name">:$name);
     let assemblyFormat = "`<` $name `>`";
 }
+
+def DontcareType : P4Dialect_Type<"Dontcare", "dontcare"> {}
 
 def RefType : P4Dialect_Type<"Ref", "ref"> {
     let parameters = (ins "mlir::Type":$type);

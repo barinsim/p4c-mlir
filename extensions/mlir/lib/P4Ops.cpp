@@ -77,6 +77,24 @@ void ConstantOp::print(mlir::OpAsmPrinter &printer) {
     printer << getValue();
 }
 
+mlir::ParseResult ControlPlaneValueOp::parse(mlir::OpAsmParser &parser,
+                                             mlir::OperationState &result) {
+    mlir::TypeAttr type;
+    if (parser.parseOptionalAttrDict(result.attributes) || parser.parseColon() ||
+        parser.parseAttribute(type, "type", result.attributes))
+        return mlir::failure();
+
+    result.addTypes(type.getValue());
+    return mlir::success();
+}
+
+void ControlPlaneValueOp::print(mlir::OpAsmPrinter &printer) {
+    printer << " ";
+    printer.printOptionalAttrDict((*this)->getAttrs(), {"type"});
+    printer << ": ";
+    printer << getType();
+}
+
 void ControlOp::print(mlir::OpAsmPrinter &printer) {
     auto funcName =
         getSymNameAttr().getValue();
@@ -443,6 +461,24 @@ mlir::LogicalResult TableKeyOp::verifySymbolUses(::mlir::SymbolTableCollection& 
     }
 
     return mlir::success();
+}
+
+mlir::ParseResult DontcareOp::parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {
+    mlir::TypeAttr type;
+    if (parser.parseOptionalAttrDict(result.attributes) ||
+        parser.parseColon() ||
+        parser.parseAttribute(type, "type", result.attributes))
+        return mlir::failure();
+
+    result.addTypes(type.getValue());
+    return mlir::success();
+}
+
+void DontcareOp::print(mlir::OpAsmPrinter &printer) {
+    printer << " ";
+    printer.printOptionalAttrDict((*this)->getAttrs(), {"type"});
+    printer << ": ";
+    printer << getType();
 }
 
 } // namespace p4mlir

@@ -47,23 +47,6 @@ control Pipe(in MyHeader arg1, in int<16> arg2, inout int<16> arg3)(int<16> ctr_
         prop5 = baz(test);
     }
 
-    /* TODO: table myTable2 {
-        key = {
-            test : exact;
-            cst : lpm;
-        }
-        actions = {
-            bar; bak; foo(test, test);
-        }
-        prop4 = Ext(test);
-        const entries = {
-            (0x01, 0x1111) : foo(test, test);
-            (0x02, 0x1181) : bar(4, 2);
-            (0x03, 0x1111 &&& 0x02F0) : bak();
-            (0x04, _) : bak();
-        }
-    } */
-
     apply {
         myTable.apply();
         test = test + 1;
