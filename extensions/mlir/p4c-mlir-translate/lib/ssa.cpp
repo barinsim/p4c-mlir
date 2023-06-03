@@ -45,6 +45,11 @@ bool GatherAllocatableVariables::preorder(const IR::Declaration_Constant *decl) 
     return true;
 }
 
+bool GatherAllocatableVariables::preorder(const IR::P4Table *decl) {
+    vars.insert(decl);
+    return true;
+}
+
 bool GatherAllocatableVariables::preorder(const IR::Parameter *param) {
     auto* type = typeMap->getType(param, true);
     if (!isPrimitiveType(type)) {
@@ -111,7 +116,7 @@ bool AllocateVariables::preorder(const IR::Parameter* param) {
 bool AllocateVariables::preorder(const IR::P4Control* control) {
     // Allocate out-of-apply local declarations to STACK.
     // This is overly conservative, but simplifies many things, like referencing these variables
-    // within table declarations
+    // within table declarations, since we do not have to compute SSA numbering for them
     auto& decls = control->controlLocals;
     std::for_each(decls.begin(), decls.end(), [&](const IR::IDeclaration* decl) {
         if (decl->is<IR::Declaration_Variable>()) {
@@ -119,6 +124,10 @@ bool AllocateVariables::preorder(const IR::P4Control* control) {
         }
     });
     return true;
+}
+
+bool AllocateVariables::preorder(const IR::P4Table* table) {
+    allocation.set(table, AllocType::EXTERN_MEMBER);
 }
 
 bool AllocateVariables::preorder(const IR::PathExpression* pe) {

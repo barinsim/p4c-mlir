@@ -281,204 +281,79 @@ class MakeFullyQualifiedSymbols : public Inspector
     }
 };
 
-// Pass that converts all out-of-apply local declarations which can be referenced from an action
-// into direct action parameters, which allows to move all out-of-apply local declarations into MLIR
-// apply block:
-//  int<16> x1 = 2;
-//  foo(bit<10> arg1) {
-//      x1 = 4;
-//  }
-//  apply {
-//      foo(42);
-//  }
-//
-// --->
-//
-//  int<16> __ADD_x1 = 2;
-//  foo(inout int<16> __ADD_x1, bit<10> arg1) {
-//      __ADD_x1 = 4;
-//  }
-//  apply {
-//      foo(__ADD_x1, 42);
-//  }
-//
-//  The "__ADD_" must be appended to avoid shadowing conflicts.
-//
-// Additionally, these added parameters are handled differently during mlirgen, since
-// they should not follow copy-in/copy-out semantics
-class AddRealActionParams : public PassManager
+// Container for the 'CollectAdditionalParams' pass.
+// Maps table/action to the declarations of its additional parameters
+class AdditionalParams
 {
- public:
-    static constexpr char ADDED_PREFIX[] = "__ADD_";
+    // Represents types which might need additional parameters
+    using Callable = std::variant<const IR::P4Action *, const IR::P4Table *>;
 
- private:
-    class Rename : public Transform {
-        const P4::ReferenceMap *refMap = nullptr;
-        ordered_map<const IR::IDeclaration *, std::string> renamed;
-
-     public:
-        Rename(const P4::ReferenceMap *refMap_) : refMap(refMap_) { CHECK_NULL(refMap); }
-
-     private:
-        IR::P4Control *preorder(IR::P4Control *control) override {
-            // Rename all out-of-apply local variables to "__ADD_" + 'old name'
-            IR::IndexedVector<IR::Declaration> newLocals;
-            auto &locals = control->controlLocals;
-            std::transform(locals.begin(), locals.end(), std::back_inserter(newLocals),
-                           [&](const IR::Declaration *decl) -> const IR::Declaration * {
-                               if (!decl->is<IR::Declaration_Variable>()) {
-                                   return decl;
-                               }
-                               auto *newDecl = decl->clone();
-                               std::string oldName = decl->getName().toString().c_str();
-                               std::string newName = std::string(ADDED_PREFIX) + oldName;
-                               newDecl->name = IR::ID(newName);
-                               BUG_CHECK(!renamed.count(decl), "Declaration renamed twice");
-                               renamed.insert({decl, newName});
-                               return newDecl;
-                           });
-            auto *newControl = control->clone();
-            newControl->controlLocals = newLocals;
-            return newControl;
-        }
-
-        IR::PathExpression *preorder(IR::PathExpression *pe) override {
-            CHECK_NULL(pe->path);
-            auto *decl = refMap->getDeclaration(pe->path, true);
-            if (!renamed.count(decl)) {
-                return pe;
-            }
-            IR::ID newID = pe->path->name;
-            newID.name = renamed.at(decl);
-            return new IR::PathExpression(pe->srcInfo, pe->type, new IR::Path(newID));
-        }
-
-        IR::P4Parser *preorder(IR::P4Parser *parser) override { BUG_CHECK(false, "Not implemented"); }
-    };
-
-    class CollectAdditionalActionParams : public Inspector {
-     public:
-        using ContainerType =
-            ordered_map<const IR::P4Action *, std::vector<const IR::Declaration_Variable *>>;
-
-        CollectAdditionalActionParams(ContainerType &additionalParams_)
-            : additionalParams(additionalParams_) {}
-
-     private:
-        ContainerType &additionalParams;
-
-        bool preorder(const IR::P4Action *action) override {
-            additionalParams.insert({action, {}});
-            auto *context = findContext<IR::P4Control>();
-            if (!context) {
-                return true;
-            }
-            // Add all out-of-apply variable declarations that are above this action
-            auto &locals = context->controlLocals;
-            for (auto it = locals.begin(); it != locals.end(); ++it) {
-                if (*it == action) {
-                    break;
-                }
-                if (auto *decl = (*it)->to<IR::Declaration_Variable>()) {
-                    additionalParams.at(action).push_back(decl);
-                }
-            }
-
-            return true;
-        }
-    };
-
-    class PrependAdditionalActionParams : public Transform {
-        const CollectAdditionalActionParams::ContainerType &additionalParams;
-
-     public:
-        PrependAdditionalActionParams(
-            const CollectAdditionalActionParams::ContainerType &additionalParams_)
-            : additionalParams(additionalParams_) {}
-
-     private:
-        IR::ParameterList *preorder(IR::ParameterList *params) override {
-            auto *action = findOrigCtxt<IR::P4Action>();
-            if (!action) {
-                return params;
-            }
-
-            // Prepend additional parameters to the parameter list
-            // TODO: the InOut direction is overly conservative and should depend on the usage of the
-            // parameter within the action
-            auto *newParams = new IR::ParameterList();
-            auto &toPrepend = additionalParams.at(action);
-            std::for_each(
-                toPrepend.begin(), toPrepend.end(), [&](const IR::Declaration_Variable *decl) {
-                    cstring name = decl->getName();
-                    auto *newParam = new IR::Parameter(name, IR::Direction::InOut, decl->type);
-                    newParams->push_back(newParam);
-                });
-            std::for_each(params->begin(), params->end(),
-                          [&](auto *param) { newParams->push_back(param); });
-
-            return newParams;
-        }
-    };
-
-    class FixActionCallSites : public Transform {
-        const CollectAdditionalActionParams::ContainerType &additionalParams;
-        P4::ReferenceMap *refMap = nullptr;
-        P4::TypeMap *typeMap = nullptr;
-
-     public:
-        FixActionCallSites(const CollectAdditionalActionParams::ContainerType &additionalParams_,
-                           P4::ReferenceMap *refMap_, P4::TypeMap *typeMap_)
-            : additionalParams(additionalParams_), refMap(refMap_), typeMap(typeMap_) {
-            CHECK_NULL(refMap, typeMap);
-        }
-
-        IR::MethodCallExpression *preorder(IR::MethodCallExpression *call) override {
-            auto *instance = P4::MethodInstance::resolve(call, refMap, typeMap);
-            auto *actCall = instance->to<P4::ActionCall>();
-            if (!actCall) {
-                return call;
-            }
-
-            // Create new arguments by prepending additional ones in front of the old ones
-            auto &toPrepend = additionalParams.at(actCall->action);
-            auto *oldArgs = call->arguments;
-            auto *newArgs = new IR::Vector<IR::Argument>();
-            std::for_each(toPrepend.begin(), toPrepend.end(),
-                          [&](const IR::Declaration_Variable *decl) {
-                              // TODO: the name can be shadowed here, rename
-                              cstring name = decl->getName();
-                              auto *newPath = new IR::PathExpression(name);
-                              auto *newArg = new IR::Argument(newPath);
-                              newArgs->push_back(newArg);
-                          });
-            std::copy(oldArgs->begin(), oldArgs->end(), std::back_inserter(*newArgs));
-
-            return new IR::MethodCallExpression(call->method, call->typeArguments, newArgs);
-        }
-    };
+    ordered_map<Callable, std::vector<const IR::Declaration_Variable *>> data;
 
  public:
-    AddRealActionParams() {
-        auto* additionalParams = new CollectAdditionalActionParams::ContainerType();
-        auto* refMap = new P4::ReferenceMap();
-        auto* typeMap = new P4::TypeMap();
-
-        addPasses({
-            new P4::ResolveReferences(refMap),
-            new Rename(refMap),
-            new P4::ResolveReferences(refMap),
-            new P4::TypeInference(refMap, typeMap, false, true),
-            new P4::TypeChecking(refMap, typeMap, true),
-            new CollectAdditionalActionParams(*additionalParams),
-            new PrependAdditionalActionParams(*additionalParams),
-            new FixActionCallSites(*additionalParams, refMap, typeMap),
-            new P4::ClearTypeMap(typeMap, true),
-            new P4::ResolveReferences(refMap),
-            new P4::TypeInference(refMap, typeMap, false, true),
-            new P4::TypeChecking(refMap, typeMap, true)
-        });
+    void add(Callable callable, std::vector<const IR::Declaration_Variable*> decls) {
+        BUG_CHECK(!data.count(callable), "Params for a callable added twice");
+        data[callable] = decls;
     }
+
+    std::vector<const IR::Declaration_Variable *> get(Callable callable) const {
+        BUG_CHECK(data.count(callable), "Unknown callable");
+        return data.at(callable);
+    }
+};
+
+// Translation into P4 dialect makes some implicit parameters explicit. This pass collects these
+// extra parameters which are then considered during MLIRgen. Currently collected extra parameters
+// are out-of-apply local variables which can be referenced from within a table/action definition.
+// Currently, it is assumed that all out-of-apply local variables are allocated onto a stack,
+// which heavily simplifies things since no SSA numbering has to be computed for them
+class CollectAdditionalParams : public Inspector
+{
+    // Output of this pass
+    AdditionalParams& data;
+
+    // Running list of local out-of-apply variables
+    std::vector<const IR::Declaration_Variable*> locals;
+
+    bool preorder(const IR::P4Control* control) override {
+        auto& controlLocals = control->controlLocals;
+        std::for_each(controlLocals.begin(), controlLocals.end(), [&](const IR::Declaration *decl) {
+            if (auto* local = decl->to<IR::Declaration_Variable>()) {
+                locals.push_back(local);
+            } else {
+                visit(decl);
+            }
+        });
+        return false;
+    }
+
+    void postorder(const IR::P4Control* control) override {
+        // Clear the list of locals while leaving the control
+        locals.clear();
+    }
+
+    bool preorder(const IR::P4Parser* parser) override {
+        BUG_CHECK(false, "Not implemented");
+        return false;
+    }
+
+    void postorder(const IR::P4Parser* parser) override {
+        // Clear the list of locals while leaving the parser
+        locals.clear();
+    }
+
+    bool preorder(const IR::P4Action* action) override {
+        data.add(action, locals);
+        return false;
+    }
+
+    bool preorder(const IR::P4Table* table) override {
+        data.add(table, locals);
+        return false;
+    }
+
+public:
+   CollectAdditionalParams(AdditionalParams& data_) : data(data_) {}
 };
 
 } // namespace p4mlir

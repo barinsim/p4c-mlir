@@ -32,7 +32,7 @@
 
 namespace p4mlir {
 
-// Stores mapping of P4 value references to MLIR value references
+// Stores mapping of P4 value references to MLIR values
 class ValuesTable
 {
     using ExprOrArg = std::variant<const IR::Expression*, const IR::Argument*>;
@@ -136,6 +136,10 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
     // the parent ModuleOp
     const FullyQualifiedSymbols& symbols;
 
+    // Stores additional parameters which must be explicitly stated in P4 dialect but not in P4.
+    // e.g. out-of-apply local variables are converted to explicit table apply parameters
+    const AdditionalParams& additionalParams;
+
     // Internal flag that makes sure this visitor was started properly
     // using custom 'apply' method instead of the usual `node->apply(visitor)`
     bool customApplyCalled = false;
@@ -145,7 +149,8 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
                    const Allocation &allocation_,
                    const ordered_map<const BasicBlock *, mlir::Block *> &blocksTable_,
                    P4::TypeMap *typeMap_, P4::ReferenceMap *refMap_, const SSAInfo &ssaInfo_,
-                   std::optional<mlir::Value> selfValue_, const FullyQualifiedSymbols &symbols_)
+                   std::optional<mlir::Value> selfValue_, const FullyQualifiedSymbols &symbols_,
+                   const AdditionalParams &additionalParams_)
         : builder(builder_),
           valuesTable(valuesTable_),
           allocation(allocation_),
@@ -154,7 +159,8 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
           refMap(refMap_),
           ssaInfo(ssaInfo_),
           selfValue(selfValue_),
-          symbols(symbols_) {
+          symbols(symbols_),
+          additionalParams(additionalParams_) {
         CHECK_NULL(typeMap, refMap);
     }
 
@@ -236,17 +242,22 @@ class MLIRGenImpl : public Inspector
     // See 'allocation' in 'MLIRGenImplCFG'
     const Allocation& allocation;
 
+    // See 'additionalParams' in 'MLIRGenImplCFG'
+    const AdditionalParams& additionalParams;
+
  public:
     MLIRGenImpl(mlir::OpBuilder &builder_, P4::TypeMap *typeMap_, P4::ReferenceMap *refMap_,
                 const CFGInfo &cfgInfo_, const FullyQualifiedSymbols &symbols_,
-                const SSAInfo &ssaInfo_, const Allocation &allocation_)
+                const SSAInfo &ssaInfo_, const Allocation &allocation_,
+                const AdditionalParams &additionalParams_)
         : builder(builder_),
           typeMap(typeMap_),
           refMap(refMap_),
           cfgInfo(cfgInfo_),
           symbols(symbols_),
           ssaInfo(ssaInfo_),
-          allocation(allocation_) {
+          allocation(allocation_),
+          additionalParams(additionalParams_) {
         CHECK_NULL(typeMap, refMap);
     }
 
@@ -284,20 +295,21 @@ class MLIRGen : public PassManager
     MLIRGen(mlir::OpBuilder& builder) {
         auto* refMap = new P4::ReferenceMap();
         auto* typeMap = new P4::TypeMap();
+        auto* additionalParams = new AdditionalParams();
         auto* cfgInfo = new CFGInfo();
         auto* symbols = new FullyQualifiedSymbols();
         auto* allocation = new Allocation();
         auto* ssaInfo = new SSAInfo();
-        passes.push_back(new AddRealActionParams());
         passes.push_back(new P4::ResolveReferences(refMap));
         passes.push_back(new P4::TypeInference(refMap, typeMap, false, true));
         passes.push_back(new P4::TypeChecking(refMap, typeMap, true));
+        passes.push_back(new CollectAdditionalParams(*additionalParams));
         passes.push_back(new MakeCFGInfo(*cfgInfo));
         passes.push_back(new AllocateVariables(refMap, typeMap, *allocation));
         passes.push_back(new MakeSSAInfo(*ssaInfo, *cfgInfo, *allocation, refMap, typeMap));
         passes.push_back(new MakeFullyQualifiedSymbols(builder, *symbols, typeMap));
-        passes.push_back(
-            new MLIRGenImpl(builder, typeMap, refMap, *cfgInfo, *symbols, *ssaInfo, *allocation));
+        passes.push_back(new MLIRGenImpl(builder, typeMap, refMap, *cfgInfo, *symbols, *ssaInfo,
+                                         *allocation, *additionalParams));
     }
 };
 

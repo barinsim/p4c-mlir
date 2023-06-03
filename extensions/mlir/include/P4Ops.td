@@ -71,6 +71,11 @@ def TableActionOp : P4Op<"table_action", [NoTerminator]> {
     ];
 }
 
+def TableDefaultActionOp : P4Op<"table_default_action", [NoTerminator]> {
+    let regions = (region AnyRegion:$body);
+    let assemblyFormat = "attr-dict regions";
+}
+
 def TableKeysListOp : P4Op<"table_keys_list", [NoTerminator]> {
     let regions = (region SizedRegion<1>:$body);
     let assemblyFormat = "attr-dict regions";
@@ -311,6 +316,11 @@ def ControlType : P4Dialect_Type<"Control", "control"> {
 def ExternClassType : P4Dialect_Type<"ExternClass", "extern_class"> {
     let parameters = (ins StringRefParameter<"Extern class type name">:$name, OptionalArrayRefParameter<"mlir::Type">:$type_arguments);
     let assemblyFormat = "`<` $name (`<` $type_arguments^ `>`)? `>`";
+}
+
+def TableType : P4Dialect_Type<"Table", "table"> {
+    let parameters = (ins StringRefParameter<"Table type name">:$name);
+    let assemblyFormat = "`<` $name `>`";
 }
 
 def RefType : P4Dialect_Type<"Ref", "ref"> {

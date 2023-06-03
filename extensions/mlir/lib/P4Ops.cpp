@@ -423,9 +423,9 @@ mlir::ParseResult TableActionOp::parse(mlir::OpAsmParser &parser, mlir::Operatio
 
 void TableActionOp::print(mlir::OpAsmPrinter &printer) {
     printer << ' ';
-    auto tableName = getActionNameAttr();
-    if (tableName) {
-        printer.printAttributeWithoutType(tableName);
+    auto actionName = getActionNameAttr();
+    if (actionName) {
+        printer.printAttributeWithoutType(actionName);
     }
     if (!getBody().empty()) {
         printer.printRegion(getBody(), false, true);
