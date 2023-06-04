@@ -102,6 +102,14 @@ bool MakeCFGInfo::preorder(const IR::P4Action* action) {
     return true;
 }
 
+bool MakeCFGInfo::preorder(const IR::ParserState* state) {
+    BUG_CHECK(!cfgInfo.contains(state), "State already visited");
+    BasicBlock* entryBlock = new BasicBlock(*Scope::create());
+    enterBasicBlock(entryBlock);
+    cfgInfo.add(state, entryBlock);
+    return true;
+}
+
 bool MakeCFGInfo::preorder(const IR::P4Control* control) {
     BUG_CHECK(!cfgInfo.contains(control), "Control visited twice");
 
@@ -123,6 +131,32 @@ bool MakeCFGInfo::preorder(const IR::P4Control* control) {
                   });
 
     visit(control->body);
+    return false;
+}
+
+bool MakeCFGInfo::preorder(const IR::P4Parser* parser) {
+    BUG_CHECK(!cfgInfo.contains(parser), "Parser visited twice");
+
+    // Create CFG for states
+    visit(parser->states);
+
+    // Create CFG for the body. In case of the parser, body is made out of the out-of-states local
+    // declarations with a transition into the 'start' state as the last op
+    auto* entryBlock = new BasicBlock(*Scope::create());
+    enterBasicBlock(entryBlock);
+    cfgInfo.add(parser, entryBlock);
+
+    // Add the out-of-state variable locals into the body CFG
+    std::for_each(parser->parserLocals.begin(), parser->parserLocals.end(),
+                  [&](const IR::Declaration *decl) {
+                      if (decl->is<IR::Declaration_Variable>()) {
+                          addToCurrent(decl);
+                      }
+                  });
+
+    // Add 'start' state transition
+    // TODO
+
     return false;
 }
 

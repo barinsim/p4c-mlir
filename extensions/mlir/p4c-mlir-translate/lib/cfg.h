@@ -115,7 +115,9 @@ class CFGInfo
 // Creates control flow graph of all eligible P4 constructs in the program.
 // Eligible P4 constructs:
 //      Control block body (apply + out-of-apply local declarations)
+//      Parser block body (out-of-apply local declarations)
 //      Actions
+//      States
 class MakeCFGInfo : public Inspector
 {
     // Output of this pass
@@ -140,7 +142,9 @@ class MakeCFGInfo : public Inspector
     void end_apply(const IR::Node *) override;
     
     bool preorder(const IR::P4Action*) override;
+    bool preorder(const IR::ParserState*) override;
     bool preorder(const IR::P4Control*) override;
+    bool preorder(const IR::P4Parser*) override;
     bool preorder(const IR::IfStatement*) override;
     bool preorder(const IR::SwitchStatement*) override;
     bool preorder(const IR::Declaration_Variable*) override;
@@ -162,7 +166,6 @@ class MakeCFGInfo : public Inspector
     bool preorder(const IR::ParameterList*) override { return false; }
     bool preorder(const IR::P4Table*) override { return false; }
     bool preorder(const IR::Annotations*) override { return false; }
-    bool preorder(const IR::P4Parser*) override { return false; }
     bool preorder(const IR::Attribute*) override { return false; }
     bool preorder(const IR::StructField*) override { return false; }
     bool preorder(const IR::Type_StructLike*) override { return false; }

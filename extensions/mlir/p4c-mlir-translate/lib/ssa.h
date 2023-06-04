@@ -21,9 +21,7 @@
 
 namespace p4mlir {
 
-
-// Returns true if variables of type 'type' need allocation
-// TODO: rename this
+// TODO: rename this, possibly remove
 bool isPrimitiveType(const IR::Type *type);
 
 // Gathers all referenced variables which need an allocation.
@@ -51,7 +49,7 @@ class GatherAllocatableVariables : public Inspector
     bool preorder(const IR::Parameter* param) override;
 };
 
-enum class AllocType { REG, STACK, EXTERN_MEMBER, CONSTANT_MEMBER };
+enum class AllocType { REG, STACK, EXTERN, EXTERN_MEMBER, CONSTANT_MEMBER };
 
 // Container to hold allocation types for all allocatable variables
 class Allocation
@@ -59,6 +57,9 @@ class Allocation
     ordered_map<const IR::IDeclaration*, AllocType> data;
 
  public:
+    // Sets variables that need allocation. By default assigns REG allocation
+    void setAllocatableVariables(const ordered_set<const IR::IDeclaration*>& allocatable);
+
     // Assign 'allocType' allocation do variable 'decl'
     void set(const IR::IDeclaration* decl, AllocType allocType);
 
@@ -89,6 +90,7 @@ class AllocateVariables : public Inspector, P4WriteContext
 
  private:
     profile_t init_apply(const IR::Node* node) override;
+    void end_apply(const IR::Node *root) override;
     bool preorder(const IR::Parameter* param) override;
     bool preorder(const IR::PathExpression* pe) override;
     bool preorder(const IR::P4Control* control) override;
@@ -210,7 +212,9 @@ class MakeSSAInfo : public Inspector
 
  private:
     bool preorder(const IR::P4Control* control) override;
+    bool preorder(const IR::P4Parser* parser) override;
     bool preorder(const IR::P4Action* action) override;
+    bool preorder(const IR::ParserState* state) override;
     bool preorder(const IR::PathExpression* pe) override;
     bool preorder(const IR::Declaration_Instance* decl) override;
     bool preorder(const IR::Declaration_Constant* decl) override;

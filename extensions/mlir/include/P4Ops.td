@@ -42,7 +42,14 @@ def ControlOp : P4Op<"control", [Symbol, SymbolTable, IsolatedFromAbove, NoTermi
                        TypeAttrOf<FunctionType>:$apply_type,
                        TypeAttrOf<FunctionType>:$constructor_type);
     let regions = (region SizedRegion<1>:$body);
+    let hasCustomAssemblyFormat = 1;
+}
 
+def ParserOp : P4Op<"parser", [Symbol, SymbolTable, IsolatedFromAbove, NoTerminator]> {
+    let arguments = (ins SymbolNameAttr:$sym_name,
+                       TypeAttrOf<FunctionType>:$apply_type,
+                       TypeAttrOf<FunctionType>:$constructor_type);
+    let regions = (region SizedRegion<1>:$body);
     let hasCustomAssemblyFormat = 1;
 }
 
@@ -217,7 +224,7 @@ def ConstructorOp : P4Op<"constructor", [Symbol, FunctionOpInterface, Template]>
         }];
 }
 
-def ApplyOp : P4Op<"apply", [HasParent<"ControlOp">]> {
+def ApplyOp : P4Op<"apply", [ParentOneOf<["ControlOp", "ParserOp"]>]> {
     let regions = (region MinSizedRegion<1>:$body);
     let assemblyFormat = "attr-dict regions";
 }
@@ -342,6 +349,11 @@ def StructType : P4Dialect_Type<"Struct", "struct"> {
 
 def ControlType : P4Dialect_Type<"Control", "control"> {
     let parameters = (ins StringRefParameter<"Control type name">:$name);
+    let assemblyFormat = "`<` $name `>`";
+}
+
+def ParserType : P4Dialect_Type<"Parser", "parser"> {
+    let parameters = (ins StringRefParameter<"Parser type name">:$name);
     let assemblyFormat = "`<` $name `>`";
 }
 

@@ -481,4 +481,40 @@ void DontcareOp::print(mlir::OpAsmPrinter &printer) {
     printer << getType();
 }
 
+void ParserOp::print(mlir::OpAsmPrinter &printer) {
+    auto funcName =
+        getSymNameAttr().getValue();
+
+    printer << ' ';
+    printer.printSymbolName(funcName);
+
+    auto printArgs = [&](auto first, auto end) {
+        printer << '(';
+        while (first != end) {
+            printer.printRegionArgument(*first);
+            ++first;
+            if (first != end) {
+                printer.getStream() << ", ";
+            }
+        }
+        printer << ')';
+    };
+
+    // Print apply arguments and optionally constructor arguments
+    auto args = getBody().getArguments();
+    std::size_t applyArgsCnt = getApplyType().getInputs().size();
+    printArgs(args.begin(), args.begin() + applyArgsCnt);
+    if (args.begin() + applyArgsCnt != args.end()) {
+        printArgs(args.begin() + applyArgsCnt, args.end());
+    }
+
+    printer << ' ';
+    printer.printRegion(getBody(), false, true);
+}
+
+mlir::ParseResult ParserOp::parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {
+    // TODO:
+    return mlir::failure();
+}
+
 } // namespace p4mlir

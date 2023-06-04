@@ -25,31 +25,19 @@ struct overloaded : Ts... {
 template <class... Ts>
 overloaded(Ts...) -> overloaded<Ts...>;
 
-// P4->MLIR translation works on action/state granularity, which often demands to
-// query the enclosing control/parser block for additional information.
-// This class facilitates common API for both control/parser while being able to represent
-// non-existent context as well. This is a value type and should be passed around by value
-class BlockContext {
-    using ContextNode = std::variant<std::monostate, const IR::P4Control *, const IR::P4Parser *>;
+// Common API for P4Control and P4Parser. Can represent missing block as well.
+// Throughout the P4->MLIR translation process some algorithms can be reused for both P4Control and
+// P4Parser. This class facilitates common API that is not provided by the P4 AST. This class is a
+// value type and should be passed around by value
+class P4Block {
+    using BlockNode = std::variant<std::monostate, const IR::P4Control *, const IR::P4Parser *>;
 
-    ContextNode node;
+    BlockNode node;
 
  public:
-    BlockContext() = default;
+    P4Block() = default;
 
-    BlockContext(const IR::P4Control *control) {
-        if (control) {
-            node = control;
-        }
-    }
-
-    BlockContext(const IR::P4Parser *parser) {
-        if (parser) {
-            node = parser;
-        }
-    }
-
-    BlockContext(const IR::INode* n) {
+    P4Block(const IR::INode* n) {
         if (n) {
             if (auto* control = n->to<IR::P4Control>()) {
                 node = control;
@@ -61,19 +49,20 @@ class BlockContext {
         }
     }
 
-    BlockContext(std::nullptr_t) {}
-
     operator bool() const { return !isEmpty(); }
 
-    // Returns true if represents non-existent context
+    // Returns true if represents non-existent block
     bool isEmpty() const { return std::holds_alternative<std::monostate>(node); }
+
+    bool isControl() const { return std::holds_alternative<const IR::P4Control*>(node); }
+    bool isParser() const { return std::holds_alternative<const IR::P4Parser*>(node); }
 
     const IR::Node *toNode() const {
         return std::visit(overloaded{
-                              [](auto *arg) -> const IR::Node * { return arg; },
-                              [](std::monostate) -> const IR::Node * { return nullptr; },
-                          },
-                          node);
+            [](auto *arg) -> const IR::Node * { return arg; },
+            [](std::monostate) -> const IR::Node * { return nullptr; },
+        },
+        node);
     }
 
     const IR::ParameterList *getApplyParameters() const {
@@ -90,41 +79,54 @@ class BlockContext {
         return toNode()->to<IR::IContainer>()->getConstructorParameters();
     }
 
-    ordered_set<const IR::IDeclaration *> getMemberVariables() const {
+    const IR::Type_MethodBase* getConstructorType() const {
         if (isEmpty()) {
-            return ordered_set<const IR::IDeclaration *>();
+            return nullptr;
         }
-        IR::IndexedVector<IR::Declaration> locals =
-            std::visit(overloaded{
-                           [](const IR::P4Control *arg) { return arg->controlLocals; },
-                           [](const IR::P4Parser *arg) { return arg->parserLocals; },
-                           [](std::monostate) { return IR::IndexedVector<IR::Declaration>(); },
-                       },
-                       node);
-        ordered_set<const IR::IDeclaration *> members;
-        std::for_each(locals.begin(), locals.end(), [&](const IR::IDeclaration *decl) {
-            if (decl->is<IR::Declaration_Variable>()) {
-                members.insert(decl);
-            }
-        });
-        return members;
+        return toNode()->to<IR::IContainer>()->getConstructorMethodType();
+    }
+
+    const IR::Type_MethodBase* getApplyMethodType() const {
+        if (isEmpty()) {
+            return nullptr;
+        }
+        return toNode()->to<IR::IApply>()->getApplyMethodType();
+    }
+
+    std::vector<const IR::IDeclaration *> getBodyDeclarations() const {
+        std::vector<const IR::IDeclaration*> decls = std::visit(overloaded{
+            [](const IR::P4Control *control) {
+               std::vector<const IR::IDeclaration *> rv(control->controlLocals.begin(),
+                                                        control->controlLocals.end());
+               return rv;
+            },
+            [](const IR::P4Parser *parser) {
+               // For parser we return parserLocals + states
+               std::vector<const IR::IDeclaration *> rv(parser->parserLocals.begin(),
+                                                        parser->parserLocals.end());
+               rv.insert(rv.end(), parser->states.begin(), parser->states.end());
+               return rv;
+            },
+            [](std::monostate) { return std::vector<const IR::IDeclaration*>(); },
+        },
+        node);
+        return decls;
     }
 
     const IR::Type *getType() const {
         return std::visit(overloaded{
-                              [](auto *arg) -> const IR::Type * { return arg->type; },
-                              [](std::monostate) -> const IR::Type * { return nullptr; },
-                          },
-                          node);
+            [](auto *arg) -> const IR::Type * { return arg->type; },
+            [](std::monostate) -> const IR::Type * { return nullptr; },
+        },
+        node);
     }
 
     std::string getName() const {
-        return std::visit(
-            overloaded{
-                [](auto *arg) -> std::string { return arg->getName().toString().c_str(); },
-                [](std::monostate) -> std::string { return ""; },
-            },
-            node);
+        return std::visit(overloaded{
+            [](auto *arg) -> std::string { return arg->getName().toString().c_str(); },
+            [](std::monostate) -> std::string { return ""; },
+        },
+        node);
     }
 };
 
@@ -136,6 +138,7 @@ using ReferenceableNode =
 // Represents isolated parts of the fully qualified symbol
 using SymbolParts = std::vector<mlir::StringAttr>;
 
+// Container for the MakeFullyQualifiedSymbols pass.
 // Stores the fully qualified symbols within a ModuleOp
 class FullyQualifiedSymbols
 {
@@ -333,7 +336,14 @@ class CollectAdditionalParams : public Inspector
     }
 
     bool preorder(const IR::P4Parser* parser) override {
-        BUG_CHECK(false, "Not implemented");
+        auto& parserLocals = parser->parserLocals;
+        std::for_each(parserLocals.begin(), parserLocals.end(), [&](const IR::Declaration *decl) {
+            if (auto* local = decl->to<IR::Declaration_Variable>()) {
+                locals.push_back(local);
+            } else {
+                visit(decl);
+            }
+        });
         return false;
     }
 

@@ -30,17 +30,11 @@ bool GatherAllocatableVariables::preorder(const IR::Declaration_Instance* decl) 
 }
 
 bool GatherAllocatableVariables::preorder(const IR::Declaration_Variable *decl) {
-    auto* type = typeMap->getType(decl, true);
-    if (!isPrimitiveType(type)) {
-        return true;
-    }
     vars.insert(decl);
     return true;
 }
 
 bool GatherAllocatableVariables::preorder(const IR::Declaration_Constant *decl) {
-    auto* type = typeMap->getType(decl, true);
-    BUG_CHECK(isPrimitiveType(type), "Expected primitive type");
     vars.insert(decl);
     return true;
 }
@@ -51,19 +45,23 @@ bool GatherAllocatableVariables::preorder(const IR::P4Table *decl) {
 }
 
 bool GatherAllocatableVariables::preorder(const IR::Parameter *param) {
-    auto* type = typeMap->getType(param, true);
-    if (!isPrimitiveType(type)) {
-        return false;
-    }
     // Parameters of extern methods/functions are not used within a P4 program, no need to allocate
-    if (findContext<IR::Method>()) {
+    if (findContext<IR::Type_Method>() || findContext<IR::Method>()) {
         return false;
     }
     vars.insert(param);
     return true;
 }
 
+void Allocation::setAllocatableVariables(const ordered_set<const IR::IDeclaration*>& allocatable) {
+    std::for_each(allocatable.begin(), allocatable.end(), [&](const IR::IDeclaration *decl) {
+        BUG_CHECK(!data.count(decl), "Duplicate variable");
+        data[decl] = AllocType::REG;
+    });
+}
+
 void Allocation::set(const IR::IDeclaration* decl, AllocType allocType) {
+    BUG_CHECK(data.count(decl), "Could not find allocation");
     data[decl] = allocType;
 }
 
@@ -88,28 +86,73 @@ Visitor::profile_t AllocateVariables::init_apply(const IR::Node* node) {
     // Gather all allocatable variables
     GatherAllocatableVariables gather(refMap, typeMap);
     node->apply(gather);
-    auto referencedVars = gather.getReferencedVars();
 
-    // By default allocate all variables to register, variables are then demoted to STACK
-    // allocation, depending on the context in which they are used
-    std::for_each(referencedVars.begin(), referencedVars.end(), [&](auto* decl) {
-        allocation.set(decl, AllocType::REG);
-    });
+    // By default allocate all variables to REG, variables are then demoted to
+    // other allocations, depending on the context in which they are used
+    allocation.setAllocatableVariables(gather.getReferencedVars());
 
     return Inspector::init_apply(node);
 }
 
+void AllocateVariables::end_apply(const IR::Node *node) {
+    GatherAllocatableVariables gather(refMap, typeMap);
+    node->apply(gather);
+    auto vars = gather.getReferencedVars();
+
+    // Sanity check the allocation
+    std::for_each(vars.begin(), vars.end(), [&](const IR::IDeclaration* decl) {
+        auto* type = typeMap->getType(decl->to<IR::Declaration>(), true);
+        AllocType allocType = allocation.get(decl);
+
+        if (type->is<IR::Type_Bits>() || type->is<IR::Type_StructLike>() ||
+            type->is<IR::Type_Boolean>()) {
+            BUG_CHECK(allocType == AllocType::REG ||
+                      allocType == AllocType::STACK ||
+                      allocType == AllocType::CONSTANT_MEMBER,
+                      "Unexpected allocation type");
+        }
+        else if (type->is<IR::Type_Extern>() || type->is<IR::Type_SpecializedCanonical>() ||
+                 type->is<IR::Type_Specialized>() || type->is<IR::Type_Control>() ||
+                 type->is<IR::Type_Parser>() || type->is<IR::P4Control>() ||
+                 type->is<IR::P4Parser>()) {
+            BUG_CHECK(allocType == AllocType::EXTERN ||
+                      allocType == AllocType::EXTERN_MEMBER ||
+                      allocType == AllocType::EXTERN,
+                      "Unexpected allocation type");
+            if (allocType == AllocType::EXTERN) {
+                BUG_CHECK(decl->is<IR::Parameter>(), "Expected parameter");
+            }
+        }
+        else if (type->is<IR::Type_Table>()) {
+            BUG_CHECK(allocType == AllocType::EXTERN_MEMBER, "Unexpected allocation type");
+        }
+        else {
+            BUG_CHECK(false, "Unknown type");
+        }
+    });
+}
+
 bool AllocateVariables::preorder(const IR::Parameter* param) {
     // Parameters of externs are not used within a p4 program, no need to allocate
-    if (findContext<IR::Type_Method>()) {
+    if (findContext<IR::Type_Method>() || findContext<IR::Method>()) {
         return false;
     }
-    // Allocate `out` and `inout` parameters onto STACK.
+
+    // Allocate extern parameters as EXTERN
     auto* type = typeMap->getType(param, true);
-    BUG_CHECK(isPrimitiveType(type), "Unexpected parameter type");
+    if (type->is<IR::Type_Extern>() || type->is<IR::Type_SpecializedCanonical>() ||
+        type->is<IR::Type_Specialized>() || type->is<IR::Type_Control>() ||
+        type->is<IR::Type_Parser>() || type->is<IR::P4Control>() || type->is<IR::P4Parser>()) {
+        allocation.set(param, AllocType::EXTERN);
+        return false;
+    }
+
+    // Allocate `out` and `inout` parameters onto STACK.
     if (param->direction == IR::Direction::InOut || param->direction == IR::Direction::Out) {
         allocation.set(param, AllocType::STACK);
+        return false;
     }
+
     return false;
 }
 
@@ -133,7 +176,14 @@ bool AllocateVariables::preorder(const IR::P4Table* table) {
 bool AllocateVariables::preorder(const IR::PathExpression* pe) {
     // Skip references that do not reference allocatable types
     auto* type = typeMap->getType(pe, true);
-    if (!isPrimitiveType(type)) {
+    if (type->is<IR::Type_MethodBase>()) {
+        return true;
+    }
+
+    // Skip externally allocated objects, those are allocated while vising its declarations
+    if (type->is<IR::Type_Extern>() || type->is<IR::Type_SpecializedCanonical>() ||
+        type->is<IR::Type_Specialized>() || type->is<IR::Type_Control>() ||
+        type->is<IR::Type_Parser>() || type->is<IR::P4Control>() || type->is<IR::P4Parser>()) {
         return true;
     }
 
@@ -141,7 +191,7 @@ bool AllocateVariables::preorder(const IR::PathExpression* pe) {
     CHECK_NULL(pe->path);
     auto* decl = refMap->getDeclaration(pe->path, true);
 
-    // Variables used as an out or inout arguments must be STACK allocated.
+    // Variables used as out or inout arguments must be STACK allocated.
     // This aligns with parameter allocations
     if (findContext<IR::Argument>() && isWrite()) {
         allocation.set(decl, AllocType::STACK);
@@ -286,7 +336,7 @@ bool MakeSSAInfo::preorder(const IR::P4Control* control) {
         });
     }
 
-    // Number REG parameters
+    // Number REG parameters.
     // Those can be only read, which means they can be simply assigned 0
     std::for_each(regParams.begin(), regParams.end(), [&](const IR::IDeclaration* param) {
         ssaInfo.numberRef((ID)0, param);
@@ -294,6 +344,31 @@ bool MakeSSAInfo::preorder(const IR::P4Control* control) {
 
     // Number out-of-apply declarations + apply method
     traverseCFG(regParams, cfgInfo.get(control));
+
+    return true;
+}
+
+bool MakeSSAInfo::preorder(const IR::P4Parser* parser) {
+    // Collect REG parameters
+    auto* applyParams = parser->getApplyParameters();
+    auto* ctrParams = parser->getConstructorParameters();
+    ordered_set<const IR::IDeclaration*> regParams;
+    for (auto* params : {applyParams, ctrParams}) {
+        std::for_each(params->begin(), params->end(), [&](const IR::Parameter* param) {
+            if (allocation.get(param) == AllocType::REG) {
+                regParams.insert(param);
+            }
+        });
+    }
+
+    // Number REG parameters
+    // Those can be only read, which means they can be simply assigned 0
+    std::for_each(regParams.begin(), regParams.end(), [&](const IR::IDeclaration* param) {
+        ssaInfo.numberRef((ID)0, param);
+    });
+
+    // Number out-of-state local declarations
+    traverseCFG(regParams, cfgInfo.get(parser));
 
     return true;
 }
@@ -336,6 +411,26 @@ bool MakeSSAInfo::preorder(const IR::P4Action* action) {
 
     // Number action body
     traverseCFG(regParams, cfgInfo.get(action));
+
+    return true;
+}
+
+bool MakeSSAInfo::preorder(const IR::ParserState* state) {
+    // Collect REG apply/ctr parameters of the enclosing block
+    auto* parser = findContext<IR::P4Parser>();
+    auto* applyParams = parser->getApplyParameters();
+    auto* ctrParams = parser->getConstructorParameters();
+    ordered_set<const IR::IDeclaration*> regParams;
+    for (auto* params : {applyParams, ctrParams}) {
+        std::for_each(params->begin(), params->end(), [&](const IR::Parameter* param) {
+            if (allocation.get(param) == AllocType::REG) {
+                regParams.insert(param);
+            }
+        });
+    }
+
+    // Number parser state body
+    traverseCFG(regParams, cfgInfo.get(state));
 
     return true;
 }

@@ -32,6 +32,22 @@
 
 namespace p4mlir {
 
+// Class faciliating conversion of the P4 types into MLIR types
+class TypeConvertor
+{
+    P4::TypeMap* typeMap = nullptr;
+    P4::ReferenceMap* refMap = nullptr;
+
+ public:
+    TypeConvertor(P4::TypeMap *typeMap_, P4::ReferenceMap *refMap_)
+        : typeMap(typeMap_), refMap(refMap_) {
+        CHECK_NULL(typeMap, refMap);
+    }
+
+    // Converts P4 type into the corresponding MLIR type
+    mlir::Type toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) const;
+};
+
 // Stores mapping of P4 value references to MLIR values
 class ValuesTable
 {
@@ -216,6 +232,9 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
 
     // Gets the value containing the `self` reference
     std::optional<mlir::Value> getSelfValue() const;
+
+    // Converts P4 type into corresponding MLIR type
+    mlir::Type toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) const;
 };
 
 // Visitor converting valid P4 AST into P4 MLIR dialect
@@ -264,7 +283,9 @@ class MLIRGenImpl : public Inspector
     }
 
  private:
+    bool preorder(const IR::P4Parser* parser) override;
     bool preorder(const IR::P4Control* control) override;
+    bool preorder(const IR::ParserState* state) override;
     bool preorder(const IR::P4Action* action) override;
     bool preorder(const IR::Method* method) override;
     bool preorder(const IR::Type_Header* hdr) override;
@@ -286,15 +307,28 @@ class MLIRGenImpl : public Inspector
 
     // Generates MLIR for CFG of 'decl', MLIR blocks are inserted into 'targetRegion'.
     // CFG must be accessible through `cfg['decl']`
-    void genMLIRFromCFG(BlockContext context, CFG cfg, mlir::Region& targetRegion);
+    void genMLIRFromCFG(P4Block context, CFG cfg, mlir::Region& targetRegion);
 
     // Convenience method to create 'MLIRGenImplCFG' from private member variables
     MLIRGenImplCFG* createCFGVisitor(std::optional<mlir::Value> selfValue);
+
+    // Given P4Block 'block' representing P4Control or P4Parser, generates MLIR for either of them.
+    // In P4 dialect control and parser are treated very similarly and thus its build process can
+    // be unified
+    mlir::Operation* buildControlOrParser(P4Block block);
 
     // Given 'expr' builds TableActionOp including its body.
     // TableActionOp is needed to be built from multiple different AST nodes.
     // This simplifies the process
     TableActionOp buildTableActionOp(const IR::Expression* expr);
+
+    // Converts P4 type into corresponding MLIR type
+    mlir::Type toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) const;
+
+    // Given P4Block 'context', generates p4.self op and returns the generated MLIR value.
+    // If 'context' represents empty context, returns std::nullopt.
+    std::optional<mlir::Value> generateSelfValue(mlir::Location loc, mlir::OpBuilder &builder,
+                                                 P4Block context);
 };
 
 // Main pass of the P4 AST -> P4 MLIR dialect translation
