@@ -141,16 +141,11 @@ control Pipe() {
 // CHECK-NEXT: %0 = p4.self : !p4.ref<!p4.control<"Pipe">>
 // CHECK-NEXT: %1 = p4.constant 46 : si64
 // CHECK-NEXT: %2 = p4.cast(%1) : si64 -> si32
-// CHECK-NEXT: %3 = p4.alloc : !p4.ref<!p4.header<"MyHeader">>
-// CHECK-NEXT: %4 = p4.get_member_ref(%3) "f1" : !p4.ref<!p4.header<"MyHeader">> -> !p4.ref<si32>
-// CHECK-NEXT: p4.store(%4, %2) : (!p4.ref<si32>, si32) -> ()
-// CHECK-NEXT: %5 = p4.get_member_ref(%3) "__valid" : !p4.ref<!p4.header<"MyHeader">> -> !p4.ref<i1>
-// CHECK-NEXT: %6 = p4.constant true
-// CHECK-NEXT: p4.store(%5, %6) : (!p4.ref<i1>, i1) -> ()
-// CHECK-NEXT: %7 = p4.load(%3) : !p4.ref<!p4.header<"MyHeader">> -> !p4.header<"MyHeader">
-// CHECK-NEXT: %8 = p4.constant true
-// CHECK-NEXT: %9 = p4.constant false
-// CHECK-NEXT: p4.init @Register::@Register_3 !p4.extern_class<"Register"<i1, !p4.header<"MyHeader">>> (%7, %8, %9) : (!p4.header<"MyHeader">, i1, i1)
+// CHECK-NEXT: %3 = p4.constant true
+// CHECK-NEXT: %4 = p4.tuple(%2, %3) : (si32, i1) -> !p4.header<"MyHeader">
+// CHECK-NEXT: %5 = p4.constant true
+// CHECK-NEXT: %6 = p4.constant false
+// CHECK-NEXT: p4.init @Register::@Register_3 !p4.extern_class<"Register"<i1, !p4.header<"MyHeader">>> (%4, %5, %6) : (!p4.header<"MyHeader">, i1, i1)
 // CHECK-NEXT: }
 
 // CHECK-NEXT: p4.member_decl @chk1 : !p4.extern_class<"Checksum"<!p4.extern_class<"Register"<si32, i1>>>> {
@@ -161,14 +156,9 @@ control Pipe() {
 // CHECK-NEXT: p4.member_decl @hdr : !p4.header<"MyHeader"> {
 // CHECK-NEXT: %0 = p4.self : !p4.ref<!p4.control<"Pipe">>
 // CHECK-NEXT: %1 = p4.constant 50 : si32
-// CHECK-NEXT: %2 = p4.alloc : !p4.ref<!p4.header<"MyHeader">>
-// CHECK-NEXT: %3 = p4.get_member_ref(%2) "f1" : !p4.ref<!p4.header<"MyHeader">> -> !p4.ref<si32>
-// CHECK-NEXT: p4.store(%3, %1) : (!p4.ref<si32>, si32) -> ()
-// CHECK-NEXT: %4 = p4.get_member_ref(%2) "__valid" : !p4.ref<!p4.header<"MyHeader">> -> !p4.ref<i1>
-// CHECK-NEXT: %5 = p4.constant true
-// CHECK-NEXT: p4.store(%4, %5) : (!p4.ref<i1>, i1) -> ()
-// CHECK-NEXT: %6 = p4.load(%2) : !p4.ref<!p4.header<"MyHeader">> -> !p4.header<"MyHeader">
-// CHECK-NEXT: p4.init !p4.header<"MyHeader"> (%6) : (!p4.header<"MyHeader">)
+// CHECK-NEXT: %2 = p4.constant true
+// CHECK-NEXT: %3 = p4.tuple(%1, %2) : (si32, i1) -> !p4.header<"MyHeader">
+// CHECK-NEXT: p4.init !p4.header<"MyHeader"> (%3) : (!p4.header<"MyHeader">)
 // CHECK-NEXT: }
 
 // CHECK-NEXT: p4.member_decl @chk3 : !p4.extern_class<"Checksum"<!p4.header<"MyHeader">>> {

@@ -103,35 +103,30 @@ control Pipe(int<16> arg1, in int<16> arg2) {
 // CHECK-NEXT: %6 = p4.alloc : !p4.ref<si16>
 // CHECK-NEXT: p4.store(%6, %5) : (!p4.ref<si16>, si16) -> ()
 // CHECK-NEXT: %7 = p4.constant 50 : si16
-// CHECK-NEXT: %8 = p4.alloc : !p4.ref<!p4.header<"MyHeader">>
-// CHECK-NEXT: %9 = p4.get_member_ref(%8) "f1" : !p4.ref<!p4.header<"MyHeader">> -> !p4.ref<si16>
-// CHECK-NEXT: p4.store(%9, %7) : (!p4.ref<si16>, si16) -> ()
-// CHECK-NEXT: %10 = p4.get_member_ref(%8) "__valid" : !p4.ref<!p4.header<"MyHeader">> -> !p4.ref<i1>
-// CHECK-NEXT: %11 = p4.constant true
-// CHECK-NEXT: p4.store(%10, %11) : (!p4.ref<i1>, i1) -> ()
-// CHECK-NEXT: %12 = p4.load(%8) : !p4.ref<!p4.header<"MyHeader">> -> !p4.header<"MyHeader">
-// CHECK-NEXT: %13 = p4.alloc : !p4.ref<!p4.header<"MyHeader">>
-// CHECK-NEXT: p4.store(%13, %12) : (!p4.ref<!p4.header<"MyHeader">>, !p4.header<"MyHeader">) -> ()
-// CHECK-NEXT: %14 = p4.constant 9 : si16
+// CHECK-NEXT: %8 = p4.constant true
+// CHECK-NEXT: %9 = p4.tuple(%7, %8) : (si16, i1) -> !p4.header<"MyHeader">
+// CHECK-NEXT: %10 = p4.alloc : !p4.ref<!p4.header<"MyHeader">>
+// CHECK-NEXT: p4.store(%10, %9) : (!p4.ref<!p4.header<"MyHeader">>, !p4.header<"MyHeader">) -> ()
+// CHECK-NEXT: %11 = p4.constant 9 : si16
+// CHECK-NEXT: %12 = p4.cast(%11) : si16 -> si16
+// CHECK-NEXT: %13 = p4.alloc : !p4.ref<si16>
+// CHECK-NEXT: p4.store(%13, %12) : (!p4.ref<si16>, si16) -> ()
+// CHECK-NEXT: %14 = p4.constant 3 : si16
 // CHECK-NEXT: %15 = p4.cast(%14) : si16 -> si16
 // CHECK-NEXT: %16 = p4.alloc : !p4.ref<si16>
 // CHECK-NEXT: p4.store(%16, %15) : (!p4.ref<si16>, si16) -> ()
-// CHECK-NEXT: %17 = p4.constant 3 : si16
-// CHECK-NEXT: %18 = p4.cast(%17) : si16 -> si16
+// CHECK-NEXT: %17 = p4.alloc : !p4.ref<si16>
+// CHECK-NEXT: %18 = p4.load(%16) : !p4.ref<si16> -> si16
+// CHECK-NEXT: p4.store(%17, %18) : (!p4.ref<si16>, si16) -> ()
 // CHECK-NEXT: %19 = p4.alloc : !p4.ref<si16>
-// CHECK-NEXT: p4.store(%19, %18) : (!p4.ref<si16>, si16) -> ()
-// CHECK-NEXT: %20 = p4.alloc : !p4.ref<si16>
+// CHECK-NEXT: p4.call @Pipe::@foo(%3, %6, %10, %17, %19) : (!p4.ref<si16>, !p4.ref<si16>, !p4.ref<!p4.header<"MyHeader">>, !p4.ref<si16>, !p4.ref<si16>) -> ()
+// CHECK-NEXT: %20 = p4.load(%17) : !p4.ref<si16> -> si16
+// CHECK-NEXT: p4.store(%16, %20) : (!p4.ref<si16>, si16) -> ()
 // CHECK-NEXT: %21 = p4.load(%19) : !p4.ref<si16> -> si16
-// CHECK-NEXT: p4.store(%20, %21) : (!p4.ref<si16>, si16) -> ()
-// CHECK-NEXT: %22 = p4.alloc : !p4.ref<si16>
-// CHECK-NEXT: p4.call @Pipe::@foo(%3, %6, %13, %20, %22) : (!p4.ref<si16>, !p4.ref<si16>, !p4.ref<!p4.header<"MyHeader">>, !p4.ref<si16>, !p4.ref<si16>) -> ()
-// CHECK-NEXT: %23 = p4.load(%20) : !p4.ref<si16> -> si16
-// CHECK-NEXT: p4.store(%19, %23) : (!p4.ref<si16>, si16) -> ()
-// CHECK-NEXT: %24 = p4.load(%22) : !p4.ref<si16> -> si16
-// CHECK-NEXT: p4.store(%3, %24) : (!p4.ref<si16>, si16) -> ()
-// CHECK-NEXT: p4.call @Pipe::@bar(%3, %6, %13, %16) : (!p4.ref<si16>, !p4.ref<si16>, !p4.ref<!p4.header<"MyHeader">>, !p4.ref<si16>) -> ()
+// CHECK-NEXT: p4.store(%3, %21) : (!p4.ref<si16>, si16) -> ()
+// CHECK-NEXT: p4.call @Pipe::@bar(%3, %6, %10, %13) : (!p4.ref<si16>, !p4.ref<si16>, !p4.ref<!p4.header<"MyHeader">>, !p4.ref<si16>) -> ()
 // CHECK-NEXT: p4.return
-
 // CHECK-NEXT: }
+
 // CHECK-NEXT: }
 // CHECK-NEXT: }

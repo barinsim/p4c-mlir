@@ -638,44 +638,42 @@ void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
     valuesTable.add(pe, val);
 }
 
-void MLIRGenImplCFG::postorder(const IR::StructExpression* se) {
-    // Allocate stack space for the result of the struct expression
-    CHECK_NULL(se->structType);
-    auto* typeName = se->structType->checkedTo<IR::Type_Name>();
-    CHECK_NULL(typeName->path);
-    auto* p4type = refMap->getDeclaration(typeName->path, true)->to<IR::Type>();
+void MLIRGenImplCFG::postorder(const IR::StructExpression* structExpr) {
+    auto* p4type = typeMap->getType(structExpr, true)->to<IR::Type_StructLike>();
+    CHECK_NULL(p4type);
     auto type = toMLIRType(builder, p4type);
-    auto refType = wrappedIntoRef(builder, type);
-    auto loca = loc(builder, se);
-    mlir::Value addr = builder.create<p4mlir::AllocOp>(loca, refType);
 
-    // Initialize the fields of the allocated stack space.
-    // The initializers are represented as {fieldName, expression} pairs
-    auto& namedExprs = se->components;
-    std::for_each(namedExprs.begin(), namedExprs.end(), [&](const IR::NamedExpression* namedExpr) {
-        auto fieldName = builder.getStringAttr(namedExpr->getName().toString().c_str());
-        auto fieldType = toMLIRType(builder, typeMap->getType(namedExpr->expression, true));
-        auto fieldRefType = wrappedIntoRef(builder, fieldType);
-        auto loca = loc(builder, se);
-        auto ref = builder.create<p4mlir::GetMemberRefOp>(loca, fieldRefType, addr, fieldName);
-        mlir::Value value = valuesTable.get(namedExpr->expression);
-        builder.create<p4mlir::StoreOp>(loca, ref, value);
-    });
+    // Retrieve the MLIR component values. The initializers are represented as {fieldName,
+    // expression} pairs, which must be ordered correctly
+    std::vector<mlir::Value> values;
+    auto& fields = p4type->fields;
+    std::transform(fields.begin(), fields.end(), std::back_inserter(values),
+                   [&](const IR::StructField *field) {
+                       cstring fieldName = field->getName();
+                       auto &components = structExpr->components;
+                       const IR::Expression *initExpr = nullptr;
+                       for (auto *namedExpr : components) {
+                           if (namedExpr->getName() == fieldName) {
+                               initExpr = namedExpr->expression;
+                               break;
+                           }
+                       }
+                       CHECK_NULL(initExpr);
+                       return valuesTable.getUnchecked(initExpr);
+                   });
 
     // P4 states that a header initialized by a list expression has its validity bit set to `true`.
-    // MLIR represents this bit as an explicit '__valid' member field, that must be now initialized
-    // explicitly
+    // MLIR represents this bit as an explicit '__valid' member as the last field, for which we must
+    // add 'true' value as the last list component
     if (type.isa<p4mlir::HeaderType>()) {
-        auto fieldName = builder.getStringAttr("__valid");
-        auto fieldRefType = wrappedIntoRef(builder, builder.getIntegerType(1));
-        auto ref = builder.create<p4mlir::GetMemberRefOp>(loca, fieldRefType, addr, fieldName);
-        mlir::Value cst = builder.create<p4mlir::ConstantOp>(loca, builder.getIntegerType(1), true);
-        builder.create<p4mlir::StoreOp>(loca, ref, cst);
+        mlir::Value cst = builder.create<p4mlir::ConstantOp>(loc(builder, structExpr),
+                                                             builder.getIntegerType(1), true);
+        values.push_back(cst);
     }
 
-    // Always materialize the value, since `StructExpression` cannot be used in a write context
-    mlir::Value val = builder.create<p4mlir::LoadOp>(loca, type, addr);
-    valuesTable.add(se, val);
+    // Create TupleOp
+    mlir::Value tupleVal = builder.create<p4mlir::TupleOp>(loc(builder, structExpr), type, values);
+    valuesTable.add(structExpr, tupleVal);
 }
 
 void MLIRGenImplCFG::postorder(const IR::ListExpression* listExpr) {

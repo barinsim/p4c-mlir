@@ -76,7 +76,7 @@ def TableEntryKeysOp : P4Op<"table_entry_keys", [HasParent<"TableEntryOp">]> {
 
 def TupleOp : P4Op<"tuple"> {
     let arguments = (ins Variadic<AnyType>:$values);
-    let results = (outs Builtin_Tuple:$result);
+    let results = (outs AnyType:$result);
     let assemblyFormat = "attr-dict `(` operands `)` `:` functional-type(operands, results)";
 }
 

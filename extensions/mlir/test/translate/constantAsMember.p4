@@ -63,14 +63,9 @@ control Pipe(bit<10> arg1, in int<16> arg2, out int<16> arg3, inout int<16> arg4
 // CHECK-NEXT: p4.member_decl @cst2 : !p4.header<"MyHeader"> {
 // CHECK-NEXT: %0 = p4.self : !p4.ref<!p4.control<"Pipe">>
 // CHECK-NEXT: %1 = p4.constant 2 : si16
-// CHECK-NEXT: %2 = p4.alloc : !p4.ref<!p4.header<"MyHeader">>
-// CHECK-NEXT: %3 = p4.get_member_ref(%2) "f1" : !p4.ref<!p4.header<"MyHeader">> -> !p4.ref<si16>
-// CHECK-NEXT: p4.store(%3, %1) : (!p4.ref<si16>, si16) -> ()
-// CHECK-NEXT: %4 = p4.get_member_ref(%2) "__valid" : !p4.ref<!p4.header<"MyHeader">> -> !p4.ref<i1>
-// CHECK-NEXT: %5 = p4.constant true
-// CHECK-NEXT: p4.store(%4, %5) : (!p4.ref<i1>, i1) -> ()
-// CHECK-NEXT: %6 = p4.load(%2) : !p4.ref<!p4.header<"MyHeader">> -> !p4.header<"MyHeader">
-// CHECK-NEXT: p4.init !p4.header<"MyHeader"> (%6) : (!p4.header<"MyHeader">)
+// CHECK-NEXT: %2 = p4.constant true
+// CHECK-NEXT: %3 = p4.tuple(%1, %2) : (si16, i1) -> !p4.header<"MyHeader">
+// CHECK-NEXT: p4.init !p4.header<"MyHeader"> (%3) : (!p4.header<"MyHeader">)
 // CHECK-NEXT: }
 
 // CHECK-NEXT: p4.member_decl @cst3 : i1 {

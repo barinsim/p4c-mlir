@@ -205,21 +205,16 @@ control Pipe(in MyHeader arg1, in int<16> arg2, inout int<16> arg3)(int<16> ctr_
 // CHECK-NEXT: p4.apply {
 // CHECK-NEXT: %0 = p4.self : !p4.ref<!p4.control<"Pipe">>
 // CHECK-NEXT: %1 = p4.constant 23 : si16
-// CHECK-NEXT: %2 = p4.alloc : !p4.ref<!p4.header<"MyHeader">>
-// CHECK-NEXT: %3 = p4.get_member_ref(%2) "f1" : !p4.ref<!p4.header<"MyHeader">> -> !p4.ref<si16>
-// CHECK-NEXT: p4.store(%3, %1) : (!p4.ref<si16>, si16) -> ()
-// CHECK-NEXT: %4 = p4.get_member_ref(%2) "__valid" : !p4.ref<!p4.header<"MyHeader">> -> !p4.ref<i1>
-// CHECK-NEXT: %5 = p4.constant true
-// CHECK-NEXT: p4.store(%4, %5) : (!p4.ref<i1>, i1) -> ()
-// CHECK-NEXT: %6 = p4.load(%2) : !p4.ref<!p4.header<"MyHeader">> -> !p4.header<"MyHeader">
-// CHECK-NEXT: %7 = p4.alloc : !p4.ref<!p4.header<"MyHeader">>
-// CHECK-NEXT: p4.store(%7, %6) : (!p4.ref<!p4.header<"MyHeader">>, !p4.header<"MyHeader">) -> ()
-// CHECK-NEXT: %8 = p4.constant 52 : si16
-// CHECK-NEXT: %9 = p4.cast(%8) : si16 -> si16
-// CHECK-NEXT: %10 = p4.alloc : !p4.ref<si16>
-// CHECK-NEXT: p4.store(%10, %9) : (!p4.ref<si16>, si16) -> ()
-// CHECK-NEXT: %11 = p4.get_member_ref(%0) "myTable" : !p4.ref<!p4.control<"Pipe">> -> !p4.ref<!p4.table<"myTable">>
-// CHECK-NEXT: p4.call_apply %11 (%7, %10) : (!p4.ref<!p4.table<"myTable">>, !p4.ref<!p4.header<"MyHeader">>, !p4.ref<si16>) -> ()
+// CHECK-NEXT: %2 = p4.constant true
+// CHECK-NEXT: %3 = p4.tuple(%1, %2) : (si16, i1) -> !p4.header<"MyHeader">
+// CHECK-NEXT: %4 = p4.alloc : !p4.ref<!p4.header<"MyHeader">>
+// CHECK-NEXT: p4.store(%4, %3) : (!p4.ref<!p4.header<"MyHeader">>, !p4.header<"MyHeader">) -> ()
+// CHECK-NEXT: %5 = p4.constant 52 : si16
+// CHECK-NEXT: %6 = p4.cast(%5) : si16 -> si16
+// CHECK-NEXT: %7 = p4.alloc : !p4.ref<si16>
+// CHECK-NEXT: p4.store(%7, %6) : (!p4.ref<si16>, si16) -> ()
+// CHECK-NEXT: %8 = p4.get_member_ref(%0) "myTable" : !p4.ref<!p4.control<"Pipe">> -> !p4.ref<!p4.table<"myTable">>
+// CHECK-NEXT: p4.call_apply %8 (%4, %7) : (!p4.ref<!p4.table<"myTable">>, !p4.ref<!p4.header<"MyHeader">>, !p4.ref<si16>) -> ()
 // CHECK-NEXT: p4.return
 // CHECK-NEXT: }
 

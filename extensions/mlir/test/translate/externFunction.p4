@@ -29,11 +29,12 @@ action foo() {
 
     foo<int<32>, bit<10>>(3, 2);
     foo<int<32>>(5);
-    // TODO: foo<MyHeader>({1, 2, 3});
     foo<MyHeader>(hdr);
 
     int<40> x4 = 6;
     foo<int<40>, int<40>>(x4, x4, 9);
+
+    foo<MyHeader>({1, 2, 3});
 }
 
 // CHECK: p4.extern @bar_3(!p4.ref<si16>, si16, !p4.header<"MyHeader">) -> si16
@@ -97,5 +98,14 @@ action foo() {
 // CHECK-NEXT: p4.store(%29, %36) : (!p4.ref<si40>, si40) -> ()
 // CHECK-NEXT: %37 = p4.load(%31) : !p4.ref<si40> -> si40
 // CHECK-NEXT: p4.store(%29, %37) : (!p4.ref<si40>, si40) -> ()
+// CHECK-NEXT: %38 = p4.constant 1 : si64
+// CHECK-NEXT: %39 = p4.cast(%38) : si64 -> si16
+// CHECK-NEXT: %40 = p4.constant 2 : si64
+// CHECK-NEXT: %41 = p4.cast(%40) : si64 -> si16
+// CHECK-NEXT: %42 = p4.constant 3 : si64
+// CHECK-NEXT: %43 = p4.cast(%42) : si64 -> si16
+// CHECK-NEXT: %44 = p4.constant true
+// CHECK-NEXT: %45 = p4.tuple(%39, %41, %43, %44) : (si16, si16, si16, i1) -> !p4.header<"MyHeader">
+// CHECK-NEXT: %46 = p4.call @foo_1<!p4.header<"MyHeader">>(%45) : (!p4.header<"MyHeader">) -> ui2
 // CHECK-NEXT: p4.return
 // CHECK-NEXT: }
