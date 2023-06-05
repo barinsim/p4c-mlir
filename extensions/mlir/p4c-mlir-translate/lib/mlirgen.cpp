@@ -850,7 +850,47 @@ bool MLIRGenImpl::preorder(const IR::P4Control* control) {
 }
 
 bool MLIRGenImpl::preorder(const IR::ParserState* state) {
-    // TODO:
+    // Collect FunctionType of this state.
+    // Contrary to P4, P4 dialect has state parameters.
+    // Those are collected by 'CollectAdditionalParams' pass earlier
+    auto params = additionalParams.get(state);
+    std::vector<mlir::Type> paramsTypes;
+    std::transform(params.begin(), params.end(), std::back_inserter(paramsTypes),
+                   [&](const IR::Declaration_Variable* decl) {
+                       BUG_CHECK(allocation.get(decl) == AllocType::STACK,
+                                 "Additional params must be STACK allocated");
+                       auto type = toMLIRType(typeMap->getType(decl, true));
+                       return wrappedIntoRef(builder, type);
+                   });
+
+    // Create StateOp and insert 1 block
+    llvm::StringRef name = state->getName().toString().c_str();
+    auto funcType = builder.getFunctionType(paramsTypes, {});
+    auto stateOp = builder.create<p4mlir::StateOp>(loc(builder, state), name, funcType);
+    auto& block = stateOp.getBody().emplaceBlock();
+    builder.setInsertionPointToEnd(&block);
+
+    // Save the values table before we create any mapping specific for the state body
+    ValuesTable savedTable = valuesTable;
+
+    // Add additional parameters as MLIR block parameters and bind them with their P4 counterparts
+    std::for_each(params.begin(), params.end(), [&](const IR::Declaration_Variable* decl) {
+        auto type = toMLIRType(typeMap->getType(decl, true));
+        type = wrappedIntoRef(builder, type);
+        auto addr = block.addArgument(type, loc(builder, state));
+        valuesTable.addAddr(decl, addr);
+    });
+
+    // Find enclosing parser block
+    auto* context = findContext<IR::P4Parser>();
+
+    // Generate state body
+    genMLIRFromCFG(context, cfgInfo.get(state), stateOp.getBody());
+
+    // Restore the old values table
+    valuesTable = std::move(savedTable);
+
+    builder.setInsertionPointAfter(stateOp);
     return false;
 }
 
@@ -1005,7 +1045,8 @@ void MLIRGenImpl::genMLIRFromCFG(P4Block context, CFG cfg, mlir::Region& targetR
 
     // Terminate blocks which had no terminator in CFG.
     // If the block has 1 successor insert BranchOp.
-    // If the block has no successors insert ReturnOp.
+    // For action: If the block has no successors insert ReturnOp.
+    // For state: TODO: If the block has no successors insert transition to reject.
     CFGWalker::preorder(cfg.getEntry(), [&](BasicBlock* bb) {
         BUG_CHECK(blocksTable.count(bb), "Could not retrive MLIR block");
         auto* block = blocksTable.at(bb);
@@ -1020,8 +1061,14 @@ void MLIRGenImpl::genMLIRFromCFG(P4Block context, CFG cfg, mlir::Region& targetR
             BUG_CHECK(blocksTable.count(succ), "Could not retrive MLIR block");
             auto args = createBlockArgs(ssaInfo, bb, succ, valuesTable);
             builder.create<mlir::cf::BranchOp>(loc, blocksTable.at(succ), args);
-        } else {
+            return;
+        }
+
+        // Insert p4.return for actions and p4.transition for states
+        if (context.isControl() || context.isEmpty()) {
             builder.create<p4mlir::ReturnOp>(loc);
+        } else {
+            // TODO:
         }
     });
 

@@ -517,4 +517,21 @@ mlir::ParseResult ParserOp::parse(mlir::OpAsmParser &parser, mlir::OperationStat
     return mlir::failure();
 }
 
+void StateOp::print(mlir::OpAsmPrinter &printer) {
+    mlir::function_interface_impl::printFunctionOp(printer, *this, /*isVariadic=*/false,
+                                                   getFunctionTypeAttrName(), getArgAttrsAttrName(),
+                                                   getResAttrsAttrName());
+}
+
+mlir::ParseResult StateOp::parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {
+    // TODO:
+    return mlir::failure();
+}
+
+void StateOp::build(mlir::OpBuilder &builder, mlir::OperationState &state, llvm::StringRef name,
+                     mlir::FunctionType type, llvm::ArrayRef<mlir::NamedAttribute> attrs,
+                     llvm::ArrayRef<mlir::DictionaryAttr> argAttrs) {
+    buildFuncLikeOp<StateOp>(builder, state, name, type, attrs, argAttrs);
+}
+
 } // namespace p4mlir

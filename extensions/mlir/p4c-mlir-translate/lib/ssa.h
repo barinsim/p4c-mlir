@@ -94,6 +94,7 @@ class AllocateVariables : public Inspector, P4WriteContext
     bool preorder(const IR::Parameter* param) override;
     bool preorder(const IR::PathExpression* pe) override;
     bool preorder(const IR::P4Control* control) override;
+    bool preorder(const IR::P4Parser* control) override;
     bool preorder(const IR::P4Table* table) override;
     bool preorder(const IR::Declaration_Instance* decl) override;
     bool preorder(const IR::Declaration_Constant* decl) override;

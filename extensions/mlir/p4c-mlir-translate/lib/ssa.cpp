@@ -169,6 +169,19 @@ bool AllocateVariables::preorder(const IR::P4Control* control) {
     return true;
 }
 
+bool AllocateVariables::preorder(const IR::P4Parser* parser) {
+    // Allocate out-of-state local declarations to STACK.
+    // This is overly conservative, but simplifies many things, like referencing these variables
+    // within parser states, since we do not have to compute SSA numbering for them
+    auto& decls = parser->parserLocals;
+    std::for_each(decls.begin(), decls.end(), [&](const IR::IDeclaration* decl) {
+        if (decl->is<IR::Declaration_Variable>()) {
+            allocation.set(decl, AllocType::STACK);
+        }
+    });
+    return true;
+}
+
 bool AllocateVariables::preorder(const IR::P4Table* table) {
     allocation.set(table, AllocType::EXTERN_MEMBER);
 }

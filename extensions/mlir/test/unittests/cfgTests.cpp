@@ -181,7 +181,6 @@ TEST_F(CFGInfo, Test_multiple_simple_actions) {
             hdr.f4 = hdr.f1;
             test1.apply();
             hdr.f5 = 3 + hdr.f2 + hdr.f5;
-            return;
         )"
     );
 
@@ -190,7 +189,6 @@ TEST_F(CFGInfo, Test_multiple_simple_actions) {
             checksum.clear();
             checksum.update(hdr.f4);
             hdr.inner.f5 = checksum.get() + hdr.f1;
-            return;
         )"
     );
 }
@@ -297,7 +295,6 @@ TEST_F(CFGInfo, Test_control_block_with_control_flow) {
             nextHop = ipv4_dest;
             headers.ip.ttl = headers.ip.ttl - 1;
             outCtrl.outputPort = port;
-            return;
         )"
     );
 
@@ -336,14 +333,11 @@ TEST_F(CFGInfo, Test_control_block_with_control_flow) {
             return;
 
            bb^9
-            return;
         )"
     );
 
-    // We insert return statements at the end of actions
     CFG_EXPECT_FUZZY_EQ(cfgEmpty,
         R"(bb^1
-            return;
         )"
     );
 
@@ -391,7 +385,6 @@ TEST_F(CFGInfo, Test_control_block_with_control_flow) {
 
            bb^9
             smac.apply();
-            return;
         )"
     );
 }
@@ -457,7 +450,6 @@ TEST_F(CFGInfo, Test_switch_statement) {
             return;
 
           bb^6
-            return;
         )"
     );
 }
@@ -516,7 +508,6 @@ TEST_F(CFGInfo, Test_switch_statement_without_default) {
             successors: bb^5
 
           bb^5
-            return;
         )"
     );
 }
@@ -582,7 +573,6 @@ TEST_F(CFGInfo, Test_fall_through_switch_statement) {
             successors: bb^6
 
           bb^6
-            return;
 
           bb^7
             hdr.f5 = 3;
@@ -628,7 +618,6 @@ TEST_F(CFGInfo, Test_wierd_fall_through_switch_statement) {
             successors: bb^3
 
           bb^3
-            return;
         )"
     );
 }
@@ -677,7 +666,6 @@ TEST_F(CFGInfo, Test_wierd_fall_through_switch_statement_without_default) {
             successors: bb^3
 
           bb^3
-            return;
         )"
     );
 }

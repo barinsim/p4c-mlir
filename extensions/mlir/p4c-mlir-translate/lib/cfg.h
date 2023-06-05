@@ -136,9 +136,8 @@ class MakeCFGInfo : public Inspector
     void enterBasicBlock(BasicBlock* bb);
 
     // Canonicalizes the CFGs:
-    //  1. The last statement of a callable is a return statement
-    //  2. Block ending with return/exit has 0 successors
-    //  3. There are no empty basic blocks (0 components)
+    //  1. Block ending with return/exit has 0 successors
+    //  2. There are no empty basic blocks (0 components)
     void end_apply(const IR::Node *) override;
     
     bool preorder(const IR::P4Action*) override;

@@ -131,9 +131,8 @@ class P4Block {
 };
 
 // Represents all P4 constructs that can be referenced by an MLIR symbol within the P4 dialect
-using ReferenceableNode =
-    std::variant<const IR::P4Action *, const IR::Method *, const IR::P4Control *,
-                 const IR::Type_Extern *, const IR::Declaration_ID *>;
+using ReferenceableNode = std::variant<const IR::P4Action*, const IR::Method*, const IR::P4Control*,
+                                       const IR::Type_Extern*, const IR::Declaration_ID*>;
 
 // Represents isolated parts of the fully qualified symbol
 using SymbolParts = std::vector<mlir::StringAttr>;
@@ -251,6 +250,16 @@ class MakeFullyQualifiedSymbols : public Inspector
     bool preorder(const IR::Type_Extern *ext) override {
         addToCurrentScope(ext);
         symbols.add(ext, currentScope);
+
+        // For some reason IR::Method objects of the type type are different instances than the
+        // methods of this IR::Type_Extern, we visit the method and the type manually here to avoid
+        // loops
+        auto* typeType = typeMap->getTypeType(ext, true)->to<IR::Type_Extern>();
+        if (typeType) {
+            symbols.add(typeType, currentScope);
+            visit(typeType->methods);
+        }
+
         return true;
     }
 
@@ -278,7 +287,7 @@ class MakeFullyQualifiedSymbols : public Inspector
     // Convenience method to add symbol part to the end of the 'currentScope'
     void addToCurrentScope(ReferenceableNode node) {
         cstring name =
-            std::visit([](auto *arg) -> cstring { return arg->getName().toString(); }, node);
+            std::visit([](auto* arg) -> cstring { return arg->getName().toString(); }, node);
         auto strAttr = builder.getStringAttr(name.c_str());
         currentScope.push_back(strAttr);
     }
@@ -289,7 +298,7 @@ class MakeFullyQualifiedSymbols : public Inspector
 class AdditionalParams
 {
     // Represents types which might need additional parameters
-    using Callable = std::variant<const IR::P4Action *, const IR::P4Table *>;
+    using Callable = std::variant<const IR::P4Action*, const IR::P4Table*, const IR::ParserState*>;
 
     ordered_map<Callable, std::vector<const IR::Declaration_Variable *>> data;
 
@@ -327,6 +336,7 @@ class CollectAdditionalParams : public Inspector
                 visit(decl);
             }
         });
+
         return false;
     }
 
@@ -336,14 +346,20 @@ class CollectAdditionalParams : public Inspector
     }
 
     bool preorder(const IR::P4Parser* parser) override {
-        auto& parserLocals = parser->parserLocals;
-        std::for_each(parserLocals.begin(), parserLocals.end(), [&](const IR::Declaration *decl) {
+        // Collect out-of-state declarations and parser states
+        std::vector<const IR::Declaration*> bodyDecls;
+        bodyDecls.insert(bodyDecls.end(), parser->parserLocals.begin(), parser->parserLocals.end());
+        bodyDecls.insert(bodyDecls.end(), parser->states.begin(), parser->states.end());
+
+        // Collect additional params for each state
+        std::for_each(bodyDecls.begin(), bodyDecls.end(), [&](const IR::Declaration *decl) {
             if (auto* local = decl->to<IR::Declaration_Variable>()) {
                 locals.push_back(local);
             } else {
                 visit(decl);
             }
         });
+
         return false;
     }
 
@@ -354,6 +370,11 @@ class CollectAdditionalParams : public Inspector
 
     bool preorder(const IR::P4Action* action) override {
         data.add(action, locals);
+        return false;
+    }
+
+    bool preorder(const IR::ParserState* state) override {
+        data.add(state, locals);
         return false;
     }
 

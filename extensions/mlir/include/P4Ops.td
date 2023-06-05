@@ -160,6 +160,34 @@ def ActionOp : P4Op<"action", [Symbol, FunctionOpInterface]> {
     }];
 }
 
+def StateOp : P4Op<"state", [Symbol, FunctionOpInterface, NoTerminator]> {
+    let arguments = (ins SymbolNameAttr:$sym_name,
+                        TypeAttrOf<FunctionType>:$function_type,
+                        OptionalAttr<StrAttr>:$sym_visibility,
+                        OptionalAttr<DictArrayAttr>:$arg_attrs,
+                        OptionalAttr<DictArrayAttr>:$res_attrs);
+    let regions = (region MinSizedRegion<1>:$body);
+    let hasCustomAssemblyFormat = 1;
+
+    let builders = [OpBuilder<(ins
+        "::llvm::StringRef":$name, "FunctionType":$type,
+        CArg<"::llvm::ArrayRef<NamedAttribute>", "{}">:$attrs,
+        CArg<"::llvm::ArrayRef<DictionaryAttr>", "{}">:$argAttrs)
+    >];
+
+    let extraClassDeclaration = [{
+        //===------------------------------------------------------------------===//
+        // FunctionOpInterface Methods
+        //===------------------------------------------------------------------===//
+
+        /// Returns the argument types of this function.
+        ::llvm::ArrayRef<::mlir::Type> getArgumentTypes() { return getFunctionType().getInputs(); }
+
+        /// Returns the result types of this function.
+        ::llvm::ArrayRef<::mlir::Type> getResultTypes() { return getFunctionType().getResults(); }
+    }];
+}
+
 def ExternOp : P4Op<"extern", [Symbol, FunctionOpInterface, Template]> {
     let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<FunctionType>:$function_type,
@@ -206,10 +234,10 @@ def ConstructorOp : P4Op<"constructor", [Symbol, FunctionOpInterface, Template]>
     let hasCustomAssemblyFormat = 1;
 
     let builders = [OpBuilder<(ins
-                                "::llvm::StringRef":$name, "FunctionType":$type,
-                                  CArg<"::llvm::ArrayRef<NamedAttribute>", "{}">:$attrs,
-                                  CArg<"::llvm::ArrayRef<DictionaryAttr>", "{}">:$argAttrs)
-                               >];
+        "::llvm::StringRef":$name, "FunctionType":$type,
+        CArg<"::llvm::ArrayRef<NamedAttribute>", "{}">:$attrs,
+        CArg<"::llvm::ArrayRef<DictionaryAttr>", "{}">:$argAttrs)
+    >];
 
     let extraClassDeclaration = [{
         //===------------------------------------------------------------------===//
@@ -221,10 +249,11 @@ def ConstructorOp : P4Op<"constructor", [Symbol, FunctionOpInterface, Template]>
 
         /// Returns the result types of this function.
         ::llvm::ArrayRef<::mlir::Type> getResultTypes() { return getFunctionType().getResults(); }
-        }];
+    }];
 }
 
-def ApplyOp : P4Op<"apply", [ParentOneOf<["ControlOp", "ParserOp"]>]> {
+// TODO: NoTerminator
+def ApplyOp : P4Op<"apply", [ParentOneOf<["ControlOp", "ParserOp"]>, NoTerminator]> {
     let regions = (region MinSizedRegion<1>:$body);
     let assemblyFormat = "attr-dict regions";
 }

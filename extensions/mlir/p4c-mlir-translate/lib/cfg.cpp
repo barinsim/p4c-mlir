@@ -48,37 +48,22 @@ const BasicBlock* BasicBlock::getFalseSuccessor() const {
 }
 
 void MakeCFGInfo::end_apply(const IR::Node*) {
-    auto isFinal = [](const BasicBlock* bb) {
-        return bb->succs.empty();
-    };
-
     auto isExitBlock = [](const BasicBlock* bb) {
         if (bb->components.empty()) {
             return false;
         }
         auto* last = bb->components.back();
-        // TODO: Add other terminators
+        // TODO: Add other exit statements
         return last->is<IR::ReturnStatement>();
     };
 
+    // BasicBlock is redundant if it has no statements and has at least 1 successor (if it has no
+    // successors it is the exit block and is not redundant)
     auto isRedundant = [](const BasicBlock* bb) {
-        return bb->components.empty();
+        return bb->components.empty() && !bb->succs.empty();
     };
 
-    for (auto& [node, cfg] : cfgInfo) {
-        auto finalBlocks = CFGWalker::collect(cfg.getEntry(), isFinal);
-        int modifiedBlocks = 0;
-        for (auto* bb : finalBlocks) {
-            // TODO: Add other terminators
-            if (bb->components.empty() || !bb->components.back()->is<IR::ReturnStatement>()) {
-                bb->components.push_back(new IR::ReturnStatement(nullptr));
-                ++modifiedBlocks;
-            }
-        }
-        BUG_CHECK(modifiedBlocks <= 1,
-                  "There should be at most 1 final block with missing exit statement.");
-    }
-
+    // Blocks with an exit statement as the last statement must have 0 successors
     for (auto& [node, cfg] : cfgInfo) {
         auto blocks = CFGWalker::collect(cfg.getEntry(), isExitBlock);
         std::for_each(blocks.begin(), blocks.end(), [](auto* bb) { bb->succs.clear(); });
@@ -141,7 +126,7 @@ bool MakeCFGInfo::preorder(const IR::P4Parser* parser) {
     visit(parser->states);
 
     // Create CFG for the body. In case of the parser, body is made out of the out-of-states local
-    // declarations with a transition into the 'start' state as the last op
+    // declarations
     auto* entryBlock = new BasicBlock(*Scope::create());
     enterBasicBlock(entryBlock);
     cfgInfo.add(parser, entryBlock);
@@ -153,9 +138,6 @@ bool MakeCFGInfo::preorder(const IR::P4Parser* parser) {
                           addToCurrent(decl);
                       }
                   });
-
-    // Add 'start' state transition
-    // TODO
 
     return false;
 }
