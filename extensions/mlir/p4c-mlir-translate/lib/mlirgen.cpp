@@ -55,55 +55,91 @@ std::vector<mlir::Value> createBlockArgs(const SSAInfo& ssaInfo, const BasicBloc
     return rv;
 }
 
-}  // namespace
+// Visitor which handles actual P4 type -> MLIR type conversion.
+// This visitor is meant to be used from within TypeConvertor
+class TypeConvertorVisitor : public Inspector
+{
+    mlir::OpBuilder& builder;
+    P4::TypeMap* typeMap = nullptr;
+    P4::ReferenceMap* refMap = nullptr;
 
-// Converts P4 type into corresponding MLIR type
-mlir::Type TypeConvertor::toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) const {
-    CHECK_NULL(p4type);
-    if (p4type->is<IR::Type_InfInt>()) {
-        // TODO: create special type
-        return mlir::IntegerType::get(builder.getContext(), 64, mlir::IntegerType::Signed);
+    // Output of this pass
+    mlir::Type output;
+
+ public:
+    TypeConvertorVisitor(mlir::OpBuilder& builder_, P4::TypeMap* typeMap_,
+                         P4::ReferenceMap* refMap_)
+        : builder(builder_), typeMap(typeMap_), refMap(refMap_) {
+        CHECK_NULL(typeMap, refMap);
     }
-    else if (auto* bits = p4type->to<IR::Type_Bits>()) {
+
+    mlir::Type getOutput() const { BUG_CHECK(output, "Output not set"); return output; }
+
+ private:
+    profile_t init_apply(const IR::Node* node) override {
+        BUG_CHECK(!output, "Output already set");
+        return Inspector::init_apply(node);
+    }
+
+    void end_apply(const IR::Node*) override { BUG_CHECK(output, "Output not set"); }
+
+    bool preorder(const IR::Node* node) override {
+        if (node->is<IR::Type>()) {
+            BUG_CHECK(false, "Unknown type");
+        }
+        BUG_CHECK(false, "Invalid node");
+    }
+
+    bool preorder(const IR::Type_InfInt*) override {
+        // TODO: create special type
+        auto type =  mlir::IntegerType::get(builder.getContext(), 64, mlir::IntegerType::Signed);
+        return setOutput(type);
+    }
+
+    bool preorder(const IR::Type_Bits* bits) override {
         auto sign = bits->isSigned ? mlir::IntegerType::Signed : mlir::IntegerType::Unsigned;
         int size = bits->size;
-        return mlir::IntegerType::get(builder.getContext(), size, sign);
+        auto type = mlir::IntegerType::get(builder.getContext(), size, sign);
+        return setOutput(type);
     }
-    else if (p4type->is<IR::Type_Boolean>()) {
-        return mlir::IntegerType::get(builder.getContext(), 1, mlir::IntegerType::Signless);
+
+    bool preorder(const IR::Type_Boolean*) override {
+        auto type = mlir::IntegerType::get(builder.getContext(), 1, mlir::IntegerType::Signless);
+        return setOutput(type);
     }
-    else if (auto* hdr = p4type->to<IR::Type_Header>()) {
+
+    bool preorder(const IR::Type_Header* hdr) override {
         cstring name = hdr->name;
         auto type = p4mlir::HeaderType::get(builder.getContext(), llvm::StringRef(name.c_str()));
-        BUG_CHECK(type, "Could not retrieve Header type");
-        return type;
+        return setOutput(type);
     }
-    else if (auto* str = p4type->to<IR::Type_Struct>()) {
+
+    bool preorder(const IR::Type_Struct* str) override {
         cstring name = str->name;
         auto type = p4mlir::StructType::get(builder.getContext(), llvm::StringRef(name.c_str()));
-        BUG_CHECK(type, "Could not retrieve Struct type");
-        return type;
+        return setOutput(type);
     }
-    else if (auto* control = p4type->to<IR::Type_Control>()) {
+
+    bool preorder(const IR::Type_Control* control) override {
         cstring name = control->name;
         auto type = p4mlir::ControlType::get(builder.getContext(), llvm::StringRef(name.c_str()));
-        BUG_CHECK(type, "Could not retrieve Control type");
-        return type;
+        return setOutput(type);
     }
-    else if (auto* parser = p4type->to<IR::Type_Parser>()) {
+
+    bool preorder(const IR::Type_Parser* parser) override {
         cstring name = parser->name;
         auto type = p4mlir::ParserType::get(builder.getContext(), llvm::StringRef(name.c_str()));
-        BUG_CHECK(type, "Could not retrieve Parser type");
-        return type;
+        return setOutput(type);
     }
-    else if (auto* method = p4type->to<IR::Type_MethodBase>()) {
+
+    bool preorder(const IR::Type_MethodBase* method) override {
         std::vector<mlir::Type> paramTypes;
         std::vector<mlir::Type> retTypes;
         auto* params = method->parameters;
         std::transform(params->begin(), params->end(), std::back_inserter(paramTypes),
                        [&](auto* param) {
                            const IR::Type* p4type = param->type;
-                           auto type = toMLIRType(builder, p4type);
+                           auto type = convert(p4type);
                            auto dir = param->direction;
                            // Out and InOut prameters are passed in as p4.ref
                            if (dir == IR::Direction::Out || dir == IR::Direction::InOut) {
@@ -116,19 +152,25 @@ mlir::Type TypeConvertor::toMLIRType(mlir::OpBuilder& builder, const IR::Type* p
                            return type;
                        });
         if (method->returnType && !method->returnType->is<IR::Type_Void>()) {
-            retTypes.push_back(toMLIRType(builder, method->returnType));
+            retTypes.push_back(convert(method->returnType));
         }
-        return builder.getFunctionType(paramTypes, retTypes);
+        auto type = builder.getFunctionType(paramTypes, retTypes);
+        return setOutput(type);
     }
-    else if (auto* typeVar = p4type->to<IR::Type_Var>()) {
+
+    bool preorder(const IR::Type_Var* typeVar) override {
         llvm::StringRef name = typeVar->getVarName().c_str();
-        return p4mlir::TypeVarType::get(builder.getContext(), name);
+        auto type = p4mlir::TypeVarType::get(builder.getContext(), name);
+        return setOutput(type);
     }
-    else if (auto* ext = p4type->to<IR::Type_Extern>()) {
+
+    bool preorder(const IR::Type_Extern* ext) override {
         llvm::StringRef name = ext->getName().toString().c_str();
-        return p4mlir::ExternClassType::get(builder.getContext(), name, {});
+        auto type = p4mlir::ExternClassType::get(builder.getContext(), name, {});
+        return setOutput(type);
     }
-    else if (auto* specialized = p4type->to<IR::Type_SpecializedCanonical>()) {
+
+    bool preorder(const IR::Type_SpecializedCanonical* specialized) override {
         BUG_CHECK(specialized->substituted->is<IR::Type_Extern>(), "Expected extern class type");
         auto* ext = specialized->substituted->to<IR::Type_Extern>();
         llvm::StringRef name = ext->getName().toString().c_str();
@@ -137,38 +179,72 @@ mlir::Type TypeConvertor::toMLIRType(mlir::OpBuilder& builder, const IR::Type* p
         std::vector<mlir::Type> typeArgs;
         std::transform(specialized->arguments->begin(), specialized->arguments->end(),
                        std::back_inserter(typeArgs),
-                       [&](const IR::Type* type) { return toMLIRType(builder, type); });
+                       [&](const IR::Type* type) { return convert(type); });
 
-        return p4mlir::ExternClassType::get(builder.getContext(), name, typeArgs);
+        auto type = p4mlir::ExternClassType::get(builder.getContext(), name, typeArgs);
+        return setOutput(type);
     }
-    else if (auto* table = p4type->to<IR::Type_Table>()) {
+
+    bool preorder(const IR::Type_Table* table) override {
         cstring name = table->table->name;
         auto type = p4mlir::TableType::get(builder.getContext(), llvm::StringRef(name.c_str()));
-        BUG_CHECK(type, "Could not retrieve Table type");
-        return type;
+        return setOutput(type);
     }
-    else if (auto* tuple = p4type->to<IR::Type_BaseList>()) {
+
+    bool preorder(const IR::Type_BaseList* tuple) override {
         std::vector<mlir::Type> types;
         auto& components = tuple->components;
         std::transform(components.begin(), components.end(), std::back_inserter(types),
-                       [&](const IR::Type* p4type) { return toMLIRType(builder, p4type); });
-        return builder.getTupleType(types);
-    }
-    else if (p4type->is<IR::Type_Dontcare>() || p4type->is<IR::Type_Unknown>()) {
-        return p4mlir::DontcareType::get(builder.getContext());
-    }
-    else if (auto* typeName = p4type->to<IR::Type_Name>()) {
-        CHECK_NULL(typeName->path);
-        auto* realType = refMap->getDeclaration(typeName->path, true)->to<IR::Type>();
-        return toMLIRType(builder, realType);
+                       [&](const IR::Type* p4type) { return convert(p4type); });
+        auto type = builder.getTupleType(types);
+        return setOutput(type);
     }
 
-    BUG_CHECK(false, "Not implemented");
-    return nullptr;
+    bool preorder(const IR::Type_Dontcare*) override {
+        auto type = p4mlir::DontcareType::get(builder.getContext());
+        return setOutput(type);
+    }
+
+    bool preorder(const IR::Type_Unknown*) override {
+        auto type = p4mlir::DontcareType::get(builder.getContext());
+        return setOutput(type);
+    }
+
+    bool preorder(const IR::Type_Name* typeName) override {
+        CHECK_NULL(typeName->path);
+        auto* realType = refMap->getDeclaration(typeName->path, true)->to<IR::Type>();
+        auto type = convert(realType);
+        return setOutput(type);
+    }
+
+    // Sets output of this visitor.
+    // Returns false for convenient use at the end of preorder method
+    bool setOutput(mlir::Type type) {
+        output = type;
+        return false;
+    }
+
+    // Convenience method to resolve inner types of types.
+    // Does not set output if this visitor
+    mlir::Type convert(const IR::Type* type) const {
+        TypeConvertorVisitor convertor(builder, typeMap, refMap);
+        type->apply(convertor);
+        return convertor.getOutput();
+    }
+};
+
+}  // namespace
+
+// Converts P4 type into corresponding MLIR type
+mlir::Type TypeConvertor::toMLIRType(const IR::Type* p4type) const {
+    CHECK_NULL(p4type);
+    TypeConvertorVisitor convertor(builder, typeMap, refMap);
+    p4type->apply(convertor);
+    return convertor.getOutput();
 }
 
 void MLIRGenImplCFG::postorder(const IR::BoolLiteral* boolean) {
-    auto type = toMLIRType(builder, typeMap->getType(boolean));
+    auto type = toMLIRType(typeMap->getType(boolean));
     CHECK_NULL(type);
     mlir::Value val =
         builder.create<p4mlir::ConstantOp>(loc(builder, boolean), type, (int64_t)boolean->value);
@@ -176,7 +252,7 @@ void MLIRGenImplCFG::postorder(const IR::BoolLiteral* boolean) {
 }
 
 void MLIRGenImplCFG::postorder(const IR::Constant* cst) {
-    auto type = toMLIRType(builder, typeMap->getType(cst));
+    auto type = toMLIRType(typeMap->getType(cst));
     CHECK_NULL(type);
     BUG_CHECK(cst->fitsInt64(), "Not implemented");
     mlir::Value val = builder.create<p4mlir::ConstantOp>(loc(builder, cst), type, cst->asInt64());
@@ -213,7 +289,7 @@ void MLIRGenImplCFG::postorder(const IR::Declaration_Variable* decl) {
     // Retrieves or creates init value
     auto createInitValue = [&](auto* decl) -> mlir::Value {
         if (!decl->initializer) {
-            auto type = toMLIRType(builder, typeMap->getType(decl));
+            auto type = toMLIRType(typeMap->getType(decl));
             auto init = builder.create<p4mlir::UninitializedOp>(loc(builder, decl), type);
             return init;
         }
@@ -226,7 +302,7 @@ void MLIRGenImplCFG::postorder(const IR::Declaration_Variable* decl) {
     if (allocation.get(decl) == AllocType::REG) {
         auto value = init;
         if (decl->initializer) {
-            auto type = toMLIRType(builder, typeMap->getType(decl));
+            auto type = toMLIRType(typeMap->getType(decl));
             value = builder.create<p4mlir::CopyOp>(loc(builder, decl), type, init);
         }
         ID ssaID = ssaInfo.getID(decl);
@@ -236,7 +312,7 @@ void MLIRGenImplCFG::postorder(const IR::Declaration_Variable* decl) {
 
     // Create space for stack allocated variables
     BUG_CHECK(allocation.get(decl) == AllocType::STACK, "Expected STACK allocation");
-    auto type = toMLIRType(builder, typeMap->getType(decl));
+    auto type = toMLIRType(typeMap->getType(decl));
     auto refType = wrappedIntoRef(builder, type);
     mlir::Value addr = builder.create<p4mlir::AllocOp>(loc(builder, decl), refType);
     builder.create<p4mlir::StoreOp>(loc(builder, decl), addr, init);
@@ -246,7 +322,7 @@ void MLIRGenImplCFG::postorder(const IR::Declaration_Variable* decl) {
 void MLIRGenImplCFG::postorder(const IR::Cast* cast) {
     CHECK_NULL(cast->destType);
     auto src = valuesTable.get(cast->expr);
-    auto targetType = toMLIRType(builder, cast->destType);
+    auto targetType = toMLIRType(cast->destType);
     mlir::Value value = builder.create<p4mlir::CastOp>(loc(builder, cast), targetType, src);
     valuesTable.add(cast, value);
 }
@@ -286,7 +362,7 @@ void MLIRGenImplCFG::postorder(const IR::Member* mem) {
     }
 
     mlir::Value baseValue = valuesTable.getUnchecked(mem->expr);
-    auto type = toMLIRType(builder, p4type);
+    auto type = toMLIRType(p4type);
     auto name = builder.getStringAttr(mem->member.toString().c_str());
 
     // Materialize member of a register allocated variable
@@ -384,7 +460,7 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
     for (std::size_t idx = 0; idx < missing; ++idx) {
         auto* param = parameters->getParameter(real.size() + idx);
         BUG_CHECK(param->direction == IR::Direction::None, "Expected no direction");
-        auto type = toMLIRType(builder, param->type);
+        auto type = toMLIRType(param->type);
         mlir::Value argVal =
             builder.create<p4mlir::ControlPlaneValueOp>(loc(builder, call), type, type);
         operands.push_back(argVal);
@@ -394,7 +470,7 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
     std::vector<mlir::Type> typeOperands;
     std::transform(call->typeArguments->begin(), call->typeArguments->end(),
                    std::back_inserter(typeOperands),
-                   [&](const IR::Type* p4type) { return toMLIRType(builder, p4type); });
+                   [&](const IR::Type* p4type) { return toMLIRType(p4type); });
 
     // Generate MLIR depending on type of the call
     if (auto* actCall = instance->to<P4::ActionCall>()) {
@@ -442,7 +518,7 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
         auto* p4RetType = externFunc->actualMethodType->returnType;
         std::vector<mlir::Type> retTypes;
         if (p4RetType && !p4RetType->is<IR::Type_Void>()) {
-            retTypes.push_back(toMLIRType(builder, p4RetType));
+            retTypes.push_back(toMLIRType(p4RetType));
         }
 
         auto callOp = builder.create<p4mlir::CallOp>(loca, retTypes, name, typeOperands, operands);
@@ -462,7 +538,7 @@ void MLIRGenImplCFG::postorder(const IR::MethodCallExpression* call) {
         auto* p4RetType = externMethod->actualMethodType->returnType;
         std::vector<mlir::Type> retTypes;
         if (p4RetType && !p4RetType->is<IR::Type_Void>()) {
-            retTypes.push_back(toMLIRType(builder, p4RetType));
+            retTypes.push_back(toMLIRType(p4RetType));
         }
 
         // Retrieve value of the target object
@@ -595,7 +671,7 @@ void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
         CHECK_NULL(pe->path);
         auto name = builder.getStringAttr(pe->path->toString().c_str());
         mlir::Value baseValue = getSelfValue().value();
-        auto mlirType = toMLIRType(builder, type);
+        auto mlirType = toMLIRType(type);
         auto refType = wrappedIntoRef(builder, mlirType);
         auto addr =
             builder.create<p4mlir::GetMemberRefOp>(loc(builder, pe), refType, baseValue, name);
@@ -609,7 +685,7 @@ void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
         CHECK_NULL(pe->path);
         auto name = builder.getStringAttr(pe->path->toString().c_str());
         mlir::Value baseValue = getSelfValue().value();
-        auto mlirType = toMLIRType(builder, type);
+        auto mlirType = toMLIRType(type);
         auto refType = wrappedIntoRef(builder, mlirType);
         auto addr =
             builder.create<p4mlir::GetMemberRefOp>(loc(builder, pe), refType, baseValue, name);
@@ -657,7 +733,7 @@ void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
 void MLIRGenImplCFG::postorder(const IR::StructExpression* structExpr) {
     auto* p4type = typeMap->getType(structExpr, true)->to<IR::Type_StructLike>();
     CHECK_NULL(p4type);
-    auto type = toMLIRType(builder, p4type);
+    auto type = toMLIRType(p4type);
 
     // Retrieve the MLIR component values. The initializers are represented as {fieldName,
     // expression} pairs, which must be ordered correctly
@@ -700,14 +776,14 @@ void MLIRGenImplCFG::postorder(const IR::ListExpression* listExpr) {
                    [&](const IR::Expression* expr) { return valuesTable.getUnchecked(expr); });
 
     // Create TupleOp
-    auto type = toMLIRType(builder, typeMap->getType(listExpr, true));
+    auto type = toMLIRType(typeMap->getType(listExpr, true));
     mlir::Value tupleVal = builder.create<p4mlir::TupleOp>(loc(builder, listExpr), type, values);
     valuesTable.add(listExpr, tupleVal);
 }
 
 void MLIRGenImplCFG::postorder(const IR::DefaultExpression* de) {
     // TODO: not sure if dontcare value is always the correct op for this AST
-    auto type = toMLIRType(builder, typeMap->getType(de, true));
+    auto type = toMLIRType(typeMap->getType(de, true));
     mlir::Value value = builder.create<p4mlir::DontcareOp>(loc(builder, de), type, type);
     valuesTable.add(de, value);
 }
@@ -750,9 +826,9 @@ void MLIRGenImplCFG::handleArithmeticOp(const IR::Operation_Binary* arithOp) {
 
 std::optional<mlir::Value> MLIRGenImplCFG::getSelfValue() const { return selfValue; }
 
-mlir::Type MLIRGenImplCFG::toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) const {
-    TypeConvertor convertor(typeMap, refMap);
-    return convertor.toMLIRType(builder, p4type);
+mlir::Type MLIRGenImplCFG::toMLIRType(const IR::Type* p4type) const {
+    TypeConvertor convertor(builder, typeMap, refMap);
+    return convertor.toMLIRType(p4type);
 }
 
 bool MLIRGenImpl::preorder(const IR::P4Parser* parser) {
@@ -785,10 +861,10 @@ bool MLIRGenImpl::preorder(const IR::P4Action* action) {
     auto additional = additionalParams.get(action);
     std::transform(additional.begin(), additional.end(), std::back_inserter(inputTypes),
                    [&](const IR::Declaration_Variable* decl) {
-                       auto type = toMLIRType(builder, typeMap->getType(decl, true));
+                       auto type = toMLIRType(typeMap->getType(decl, true));
                        return wrappedIntoRef(builder, type);
                    });
-    auto funcType = toMLIRType(builder, typeMap->getType(action, true)).cast<mlir::FunctionType>();
+    auto funcType = toMLIRType(typeMap->getType(action, true)).cast<mlir::FunctionType>();
     std::copy(funcType.getInputs().begin(), funcType.getInputs().end(),
               std::back_inserter(inputTypes));
     funcType = builder.getFunctionType(inputTypes, {});
@@ -805,7 +881,7 @@ bool MLIRGenImpl::preorder(const IR::P4Action* action) {
     // Add additional parameters as MLIR block parameters and bind them with their P4 counterparts
     std::for_each(additional.begin(), additional.end(), [&](const IR::Declaration_Variable* decl) {
         BUG_CHECK(allocation.get(decl) == AllocType::STACK, "Expected STACK allocation");
-        auto type = toMLIRType(builder, typeMap->getType(decl, true));
+        auto type = toMLIRType(typeMap->getType(decl, true));
         auto refType = wrappedIntoRef(builder, type);
         auto addr = block.addArgument(refType, loc(builder, action));
         valuesTable.addAddr(decl, addr);
@@ -814,7 +890,7 @@ bool MLIRGenImpl::preorder(const IR::P4Action* action) {
     // Add P4 parameters as MLIR block parameters and bind them with their P4 counterparts
     auto* params = action->getParameters();
     std::for_each(params->begin(), params->end(), [&](const IR::Parameter* param) {
-        auto type = toMLIRType(builder, typeMap->getType(param, true));
+        auto type = toMLIRType(typeMap->getType(param, true));
         auto dir = param->direction;
         if (dir == IR::Direction::None || dir == IR::Direction::In) {
             BUG_CHECK(allocation.get(param) == AllocType::REG, "Expected REG allocation");
@@ -855,7 +931,7 @@ bool MLIRGenImpl::preorder(const IR::Method* method) {
                    [](const IR::Type_Var* typeVar) { return typeVar->getVarName().c_str(); });
 
     // Generate MLIR func type of this method/function
-    auto funcType = toMLIRType(builder, typeMap->getType(method, true)).cast<mlir::FunctionType>();
+    auto funcType = toMLIRType(typeMap->getType(method, true)).cast<mlir::FunctionType>();
 
     // Check if this method is extern constructor, for which we generate different op
     auto* ext = findContext<IR::Type_Extern>();
@@ -895,7 +971,7 @@ void MLIRGenImpl::genMLIRFromCFG(P4Block context, CFG cfg, mlir::Region& targetR
         auto phiInfo = ssaInfo.getPhiInfo(bb);
         for (auto& [decl, phi] : phiInfo) {
             auto loc = builder.getUnknownLoc();
-            auto type = toMLIRType(builder, typeMap->getType(decl->to<IR::Declaration>(), true));
+            auto type = toMLIRType(typeMap->getType(decl->to<IR::Declaration>(), true));
             BUG_CHECK(allocation.get(decl) == AllocType::REG,
                       "Unexpected allocation for a block argument");
             mlir::BlockArgument arg = block->addArgument(type, loc);
@@ -912,7 +988,7 @@ void MLIRGenImpl::genMLIRFromCFG(P4Block context, CFG cfg, mlir::Region& targetR
         auto* block = blocksTable.at(cfg.getEntry());
         builder.setInsertionPointToStart(block);
         const IR::Type* p4type = context.getType();
-        auto contextType = toMLIRType(builder, p4type);
+        auto contextType = toMLIRType(p4type);
         auto refType = wrappedIntoRef(builder, contextType);
         selfValue = builder.create<p4mlir::SelfOp>(loc(builder, context.toNode()), refType);
     }
@@ -960,8 +1036,8 @@ MLIRGenImplCFG* MLIRGenImpl::createCFGVisitor(std::optional<mlir::Value> selfVal
 mlir::Operation* MLIRGenImpl::buildControlOrParser(P4Block block) {
     // Retrieve name and apply/ctr types
     std::string name(block.getName());
-    auto applyFuncType = toMLIRType(builder, block.getApplyMethodType()).cast<mlir::FunctionType>();
-    auto ctrFuncType = toMLIRType(builder, block.getConstructorType()).cast<mlir::FunctionType>();
+    auto applyFuncType = toMLIRType(block.getApplyMethodType()).cast<mlir::FunctionType>();
+    auto ctrFuncType = toMLIRType(block.getConstructorType()).cast<mlir::FunctionType>();
 
     // Creates ControlOp/ParserOp with 1 block
     auto createControlOrParserOp = [&](P4Block block) -> mlir::Operation* {
@@ -1066,9 +1142,9 @@ TableActionOp MLIRGenImpl::buildTableActionOp(const IR::Expression* expr) {
     return actOp;
 }
 
-mlir::Type MLIRGenImpl::toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) const {
-    TypeConvertor convertor(typeMap, refMap);
-    return convertor.toMLIRType(builder, p4type);
+mlir::Type MLIRGenImpl::toMLIRType(const IR::Type* p4type) const {
+    TypeConvertor convertor(builder, typeMap, refMap);
+    return convertor.toMLIRType(p4type);
 }
 
 std::optional<mlir::Value> MLIRGenImpl::generateSelfValue(mlir::Location loc,
@@ -1077,7 +1153,7 @@ std::optional<mlir::Value> MLIRGenImpl::generateSelfValue(mlir::Location loc,
     std::optional<mlir::Value> selfValue;
     if (context) {
         const IR::Type* p4type = context.getType();
-        auto contextType = toMLIRType(builder, p4type);
+        auto contextType = toMLIRType(p4type);
         auto refType = wrappedIntoRef(builder, contextType);
         selfValue = builder.create<p4mlir::SelfOp>(loc, refType);
     }
@@ -1141,7 +1217,7 @@ bool MLIRGenImpl::preorder(const IR::Type_Extern* ext) {
 
 bool MLIRGenImpl::preorder(const IR::StructField* field) {
     auto* p4type = field->type;
-    auto type = toMLIRType(builder, p4type);
+    auto type = toMLIRType(p4type);
     cstring name = field->name;
     builder.create<p4mlir::MemberDeclOp>(loc(builder, field), llvm::StringRef(name), type);
     return false;
@@ -1152,7 +1228,7 @@ bool MLIRGenImpl::preorder(const IR::Declaration* decl) {
               "Expected Declaration_Instance or Declaration_Constant");
 
     // Create MemberDeclOp with 1 entry block within its initializer region
-    auto type = toMLIRType(builder, typeMap->getType(decl, true));
+    auto type = toMLIRType(typeMap->getType(decl, true));
     cstring name = decl->getName();
     auto memberOp =
         builder.create<p4mlir::MemberDeclOp>(loc(builder, decl), llvm::StringRef(name), type);
@@ -1204,7 +1280,7 @@ bool MLIRGenImpl::preorder(const IR::Declaration* decl) {
 bool MLIRGenImpl::preorder(const IR::P4Table* table) {
     // Given declaration, returns its MLIR type wrapped into p4.ref
     auto getType = [&](const IR::Declaration_Variable* decl) {
-        auto type = toMLIRType(builder, typeMap->getType(decl, true));
+        auto type = toMLIRType(typeMap->getType(decl, true));
         auto refType = wrappedIntoRef(builder, type);
         return refType;
     };
@@ -1281,7 +1357,7 @@ bool MLIRGenImpl::preorder(const IR::ExpressionValue* exprVal) {
     // TODO: if expression is MethodCallExpression which does return any value, no mapping
     // is created and this crashes, not sure what is the right solution here
     CHECK_NULL(exprVal->expression);
-    auto type = toMLIRType(builder, typeMap->getType(exprVal->expression, true));
+    auto type = toMLIRType(typeMap->getType(exprVal->expression, true));
     mlir::Value value = valuesTable.getUnchecked(exprVal->expression);
     builder.create<p4mlir::InitOp>(loc(builder, exprVal), value, type);
 
@@ -1350,7 +1426,7 @@ bool MLIRGenImpl::preorder(const IR::Entry* entry) {
     // Create InitOp and pass the generated ListExpression value into it
     auto listValue = valuesTable.get(entry->keys);
     std::vector<mlir::Value> value = {valuesTable.get(entry->keys)};
-    auto type = toMLIRType(builder, typeMap->getType(entry->keys, true));
+    auto type = toMLIRType(typeMap->getType(entry->keys, true));
     builder.create<p4mlir::InitOp>(loc(builder, entry->keys), value, type);
 
     // Generate entry action value
@@ -1400,7 +1476,7 @@ bool MLIRGenImpl::preorder(const IR::KeyElement* key) {
 
     // Create InitOp and pass the generated value into it
     std::vector<mlir::Value> value = {valuesTable.getUnchecked(key->expression)};
-    auto type = toMLIRType(builder, typeMap->getType(key->expression, true));
+    auto type = toMLIRType(typeMap->getType(key->expression, true));
     builder.create<p4mlir::InitOp>(loc(builder, key), value, type);
 
     builder.restoreInsertionPoint(saved);

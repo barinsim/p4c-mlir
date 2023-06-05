@@ -35,17 +35,18 @@ namespace p4mlir {
 // Class faciliating conversion of the P4 types into MLIR types
 class TypeConvertor
 {
+    OpBuilder& builder;
     P4::TypeMap* typeMap = nullptr;
     P4::ReferenceMap* refMap = nullptr;
 
  public:
-    TypeConvertor(P4::TypeMap *typeMap_, P4::ReferenceMap *refMap_)
-        : typeMap(typeMap_), refMap(refMap_) {
+    TypeConvertor(OpBuilder& builder_, P4::TypeMap *typeMap_, P4::ReferenceMap *refMap_)
+        : builder(builder_), typeMap(typeMap_), refMap(refMap_) {
         CHECK_NULL(typeMap, refMap);
     }
 
     // Converts P4 type into the corresponding MLIR type
-    mlir::Type toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) const;
+    mlir::Type toMLIRType(const IR::Type* p4type) const;
 };
 
 // Stores mapping of P4 value references to MLIR values
@@ -234,7 +235,7 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
     std::optional<mlir::Value> getSelfValue() const;
 
     // Converts P4 type into corresponding MLIR type
-    mlir::Type toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) const;
+    mlir::Type toMLIRType(const IR::Type* p4type) const;
 };
 
 // Visitor converting valid P4 AST into P4 MLIR dialect
@@ -323,7 +324,7 @@ class MLIRGenImpl : public Inspector
     TableActionOp buildTableActionOp(const IR::Expression* expr);
 
     // Converts P4 type into corresponding MLIR type
-    mlir::Type toMLIRType(mlir::OpBuilder& builder, const IR::Type* p4type) const;
+    mlir::Type toMLIRType(const IR::Type* p4type) const;
 
     // Given P4Block 'context', generates p4.self op and returns the generated MLIR value.
     // If 'context' represents empty context, returns std::nullopt.
