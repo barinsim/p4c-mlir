@@ -1,11 +1,13 @@
 #include <boost/algorithm/string.hpp>
 
 #include "cfg.h"
+#include "utils.h"
+
 #include "frontends/p4/toP4/toP4.h"
+
 #include "lib/indent.h"
 
 namespace p4mlir {
-
 
 int BasicBlock::nextId = 0;
 
@@ -92,7 +94,31 @@ bool MakeCFGInfo::preorder(const IR::ParserState* state) {
     BasicBlock* entryBlock = new BasicBlock(*Scope::create());
     enterBasicBlock(entryBlock);
     cfgInfo.add(state, entryBlock);
-    return true;
+
+    // Visit parser body
+    visit(state->components);
+
+    // The select expression is an expression, which are not added automatically into the CFG, we
+    // must do that manually
+    if (state->selectExpression) {
+        if (auto* se = state->selectExpression->to<IR::SelectExpression>()) {
+            auto& cases = se->selectCases;
+            // The P4 dialect 'SelectTransitionOp' op unconditionally evaluates keysets for all
+            // cases. This is semantically equivalent with the P4 behaviour only if none of the
+            // keyset evaluations change the program memory state. For now we just
+            // forbid this case
+            std::for_each(cases.begin(), cases.end(), [](const IR::SelectCase* c) {
+                ContainsWriteContext checker;
+                c->keyset->apply(checker);
+                if (checker.get()) {
+                    ::error(ErrorType::ERR_INVALID, "%1$: cannot contain memory write", c->keyset);
+                }
+            });
+        }
+        addToCurrent(state->selectExpression);
+    }
+
+    return false;
 }
 
 bool MakeCFGInfo::preorder(const IR::P4Control* control) {
@@ -208,7 +234,8 @@ bool MakeCFGInfo::preorder(const IR::SwitchStatement* switchStmt) {
 }
 
 bool MakeCFGInfo::preorder(const IR::Declaration_Variable* decl) {
-    if (!findContext<IR::BlockStatement>()) {
+    // Skip declarations that are not in action/state/apply body
+    if (!findContext<IR::BlockStatement>() && !findContext<IR::ParserState>()) {
         return true;
     }
     addToCurrent(decl);
@@ -216,7 +243,7 @@ bool MakeCFGInfo::preorder(const IR::Declaration_Variable* decl) {
     return true;
 }
 
-void MakeCFGInfo::addToCurrent(const IR::StatOrDecl* item) {
+void MakeCFGInfo::addToCurrent(const IR::Node* item) {
     CHECK_NULL(curr, item);
     LOG3("CFGBuilder::add " << DBPrint::Brief << item);
     curr->components.push_back(item);

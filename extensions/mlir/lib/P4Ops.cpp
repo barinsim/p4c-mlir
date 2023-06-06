@@ -534,4 +534,34 @@ void StateOp::build(mlir::OpBuilder &builder, mlir::OperationState &state, llvm:
     buildFuncLikeOp<StateOp>(builder, state, name, type, attrs, argAttrs);
 }
 
+mlir::LogicalResult TransitionOp::verifySymbolUses(::mlir::SymbolTableCollection& symbolTable) {
+    // Verify that the state symbol is in scope.
+    // Referenced 'state' symbol is assumed
+    // to be fully qualified within the closest parent module
+    auto stateName = getStateAttr();
+    auto state = symbolTable.lookupNearestSymbolFrom<p4mlir::StateOp>(
+        getParentModule(*this), stateName);
+    if (!state) {
+        return emitOpError() << "'" << stateName << "' does not reference a valid state";
+    }
+
+    std::vector<mlir::Type> types;
+    std::copy(state.getArgumentTypes().begin(), state.getArgumentTypes().end(),
+              std::back_inserter(types));
+    std::copy(state.getResultTypes().begin(), state.getResultTypes().end(),
+              std::back_inserter(types));
+
+    // Verify that the operand types match the state declaration
+    mlir::TypeRange args = getOperands().getTypes();
+    mlir::TypeRange params = state.getArgumentTypes();
+    if (args.size() != params.size()) {
+        return emitOpError("incorrect number of operands for state");
+    }
+    if (args != params) {
+        return emitOpError("argument types do not match the parameter types");
+    }
+
+    return mlir::success();
+}
+
 } // namespace p4mlir

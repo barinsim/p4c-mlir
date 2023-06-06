@@ -128,11 +128,26 @@ class P4Block {
         },
         node);
     }
+
+    const IR::ParserState* getStartState() const {
+        return std::visit(overloaded{
+            [](auto& arg) { return (const IR::ParserState*)nullptr; },
+            [](const IR::P4Parser* parser) {
+                auto* decl = parser->getDeclByName(IR::ParserState::start);
+                CHECK_NULL(decl);
+                auto* startState = decl->to<IR::ParserState>();
+                CHECK_NULL(startState);
+                return startState;
+            },
+        },
+        node);
+    }
 };
 
 // Represents all P4 constructs that can be referenced by an MLIR symbol within the P4 dialect
 using ReferenceableNode = std::variant<const IR::P4Action*, const IR::Method*, const IR::P4Control*,
-                                       const IR::Type_Extern*, const IR::Declaration_ID*>;
+                                       const IR::Type_Extern*, const IR::Declaration_ID*,
+                                       const IR::ParserState*, const IR::P4Parser*>;
 
 // Represents isolated parts of the fully qualified symbol
 using SymbolParts = std::vector<mlir::StringAttr>;
@@ -284,6 +299,22 @@ class MakeFullyQualifiedSymbols : public Inspector
         return true;
     }
 
+    bool preorder(const IR::P4Parser *parser) override {
+        addToCurrentScope(parser);
+        symbols.add(parser, currentScope);
+        return true;
+    }
+
+    void postorder(const IR::P4Parser*) override { currentScope.pop_back(); }
+
+    bool preorder(const IR::ParserState* state) override {
+        addToCurrentScope(state);
+        symbols.add(state, currentScope);
+        return true;
+    }
+
+    void postorder(const IR::ParserState*) override { currentScope.pop_back(); }
+
     // Convenience method to add symbol part to the end of the 'currentScope'
     void addToCurrentScope(ReferenceableNode node) {
         cstring name =
@@ -385,6 +416,24 @@ class CollectAdditionalParams : public Inspector
 
 public:
    CollectAdditionalParams(AdditionalParams& data_) : data(data_) {}
+};
+
+// Checks if any of the node is in write context. If so sets the 'containsWriteContext' to true
+class ContainsWriteContext : public Inspector, P4WriteContext
+{
+   // Output of this pass
+   bool containsWriteContext = false;
+
+public:
+   bool get() const { return containsWriteContext; }
+
+private:
+   bool preorder(const IR::Node* node) override {
+        if (isWrite()) {
+            containsWriteContext = true;
+        }
+        return true;
+   }
 };
 
 } // namespace p4mlir

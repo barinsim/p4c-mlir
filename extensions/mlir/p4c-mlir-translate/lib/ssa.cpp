@@ -189,14 +189,15 @@ bool AllocateVariables::preorder(const IR::P4Table* table) {
 bool AllocateVariables::preorder(const IR::PathExpression* pe) {
     // Skip references that do not reference allocatable types
     auto* type = typeMap->getType(pe, true);
-    if (type->is<IR::Type_MethodBase>()) {
+    if (type->is<IR::Type_MethodBase>() || type->is<IR::Type_State>()) {
         return true;
     }
 
     // Skip externally allocated objects, those are allocated while vising its declarations
     if (type->is<IR::Type_Extern>() || type->is<IR::Type_SpecializedCanonical>() ||
         type->is<IR::Type_Specialized>() || type->is<IR::Type_Control>() ||
-        type->is<IR::Type_Parser>() || type->is<IR::P4Control>() || type->is<IR::P4Parser>()) {
+        type->is<IR::Type_Parser>() || type->is<IR::P4Control>() || type->is<IR::P4Parser>() ||
+        type->is<IR::Type_Table>()) {
         return true;
     }
 

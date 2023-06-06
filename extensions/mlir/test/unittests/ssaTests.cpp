@@ -136,7 +136,7 @@ TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action_1) {
 
     // This relies on a single def/use within a statement.
     // Ignores stack allocated vars
-    auto writeOrReadID = [&](const IR::StatOrDecl* stmt, bool reads) {
+    auto writeOrReadID = [&](const IR::Node* stmt, bool reads) {
         p4mlir::GatherSSAReferences refs(typeMap, refMap, allocation);
         stmt->apply(refs);
         std::vector<p4mlir::RefInfo> infos;
@@ -149,8 +149,8 @@ TEST_F(SSAInfo, Test_ssa_conversion_for_simple_action_1) {
         auto info = infos.front();
         return ssaInfo.getID(info.ref);
     };
-    auto writeID = [&](const IR::StatOrDecl* stmt) { return writeOrReadID(stmt, false); };
-    auto readID = [&](const IR::StatOrDecl* stmt) { return writeOrReadID(stmt, true); };
+    auto writeID = [&](const IR::Node* stmt) { return writeOrReadID(stmt, false); };
+    auto readID = [&](const IR::Node* stmt) { return writeOrReadID(stmt, true); };
 
     using ID = p4mlir::ID;
 

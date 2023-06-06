@@ -40,7 +40,7 @@ struct BasicBlock
 {
     BasicBlock(Scope& scope_) : scope(scope_) {}
 
-    std::vector<const IR::StatOrDecl*> components;
+    std::vector<const IR::Node*> components;
     std::vector<BasicBlock*> succs;
 
     // Stores visible declarations within this block
@@ -131,7 +131,7 @@ class MakeCFGInfo : public Inspector
 
  private:
     BasicBlock* current() { return curr; }
-    void addToCurrent(const IR::StatOrDecl* item);
+    void addToCurrent(const IR::Node* item);
     void addSuccessorToCurrent(BasicBlock* succ);
     void enterBasicBlock(BasicBlock* bb);
 

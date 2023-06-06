@@ -236,6 +236,11 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
 
     // Converts P4 type into corresponding MLIR type
     mlir::Type toMLIRType(const IR::Type* p4type) const;
+
+    // Builds TransitionOp out of 'SelectExpression' or 'PathExpression' in the case of
+    // unconditional transition
+    mlir::Operation* buildTransitionOp(
+        std::variant<const IR::SelectExpression*, const IR::PathExpression*> node);
 };
 
 // Visitor converting valid P4 AST into P4 MLIR dialect
@@ -330,6 +335,21 @@ class MLIRGenImpl : public Inspector
     // If 'context' represents empty context, returns std::nullopt.
     std::optional<mlir::Value> generateSelfValue(mlir::Location loc, mlir::OpBuilder &builder,
                                                  P4Block context);
+
+    // Given 'ParserState' builds unconditional transition to the state. This is useful if the
+    // transition is synthesized
+    mlir::Operation* buildTransitionOp(const IR::ParserState* state);
+};
+
+// Synthesize 'accept' and 'reject' parser states. This is currently needed to make the type
+// checking work
+class AddAcceptAndRejectStates : public Transform
+{
+    const IR::Node *postorder(IR::P4Parser *parser) override {
+        parser->states.push_back(new IR::ParserState(IR::ParserState::accept, nullptr));
+        parser->states.push_back(new IR::ParserState(IR::ParserState::reject, nullptr));
+        return parser;
+    }
 };
 
 // Main pass of the P4 AST -> P4 MLIR dialect translation
@@ -344,6 +364,7 @@ class MLIRGen : public PassManager
         auto* symbols = new FullyQualifiedSymbols();
         auto* allocation = new Allocation();
         auto* ssaInfo = new SSAInfo();
+        passes.push_back(new AddAcceptAndRejectStates());
         passes.push_back(new P4::ResolveReferences(refMap));
         passes.push_back(new P4::TypeInference(refMap, typeMap, false, true));
         passes.push_back(new P4::TypeChecking(refMap, typeMap, true));

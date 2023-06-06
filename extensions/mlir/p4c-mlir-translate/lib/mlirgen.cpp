@@ -645,9 +645,15 @@ void MLIRGenImplCFG::postorder(const IR::Argument* arg) {
 void MLIRGenImplCFG::postorder(const IR::PathExpression* pe) {
     auto* type = typeMap->getType(pe, true);
 
-    // Callable/table reference and match kind reference does not generate any ops and can be
-    // skipped
+    // Callable/table/match-kind references do not generate any ops and can be skipped
     if (type->is<IR::Type_MethodBase>() || type->is<IR::Type_MatchKind>()) {
+        return;
+    }
+
+    // Unconditional parser transition does not have special AST node, it's just 'PathExpression'
+    // placed as the last expression of the parser state CFG. We handle it separately
+    if (type->is<IR::Type_State>()) {
+        buildTransitionOp(pe);
         return;
     }
 
@@ -831,6 +837,71 @@ mlir::Type MLIRGenImplCFG::toMLIRType(const IR::Type* p4type) const {
     return convertor.toMLIRType(p4type);
 }
 
+mlir::Operation* MLIRGenImplCFG::buildTransitionOp(
+    std::variant<const IR::SelectExpression*, const IR::PathExpression*> node) {
+    // Unconditional transition is just 'PathExpression'
+    if (std::holds_alternative<const IR::PathExpression*>(node)) {
+        auto* pe = std::get<const IR::PathExpression*>(node);
+        BUG_CHECK(pe && typeMap->getType(pe, true)->is<IR::Type_State>(),
+                  "Expected parser state type");
+
+        // Transition to 'accept' and 'reject' is handled by separate ops in P4 dialect
+        if (pe->path->toString() == IR::ParserState::accept) {
+            return builder.create<p4mlir::ParserAcceptOp>(loc(builder, pe));
+        }
+        if (pe->path->toString() == IR::ParserState::reject) {
+            return builder.create<p4mlir::ParserRejectOp>(loc(builder, pe));
+        }
+
+        // Retrieve symbol reference of the state
+        auto* stateDecl = refMap->getDeclaration(pe->path, true)->to<IR::ParserState>();
+        CHECK_NULL(stateDecl);
+        auto stateSymbol = symbols.getSymbol(stateDecl);
+
+        // Retrieve state arguments, those were gathered earlier by 'CollectAdditionalParams'
+        std::vector<mlir::Value> argVals;
+        auto params = additionalParams.get(stateDecl);
+        std::transform(params.begin(), params.end(), std::back_inserter(argVals),
+                       [&](const IR::Declaration_Variable* decl) {
+                           BUG_CHECK(allocation.get(decl) == AllocType::STACK,
+                                     "Expected STACK allocation");
+                           return valuesTable.getAddr(decl);
+                       });
+
+        // Build TransitionOp
+        auto transOp = builder.create<p4mlir::TransitionOp>(loc(builder, pe), stateSymbol, argVals);
+        return transOp;
+    }
+}
+
+mlir::Operation* MLIRGenImpl::buildTransitionOp(const IR::ParserState* state) {
+    CHECK_NULL(state);
+
+    // Transition to 'accept' and 'reject' is handled by separate ops in P4 dialect
+    if (state->getName() == IR::ParserState::accept) {
+        return builder.create<p4mlir::ParserAcceptOp>(builder.getUnknownLoc());
+    }
+    if (state->getName() == IR::ParserState::reject) {
+        return builder.create<p4mlir::ParserRejectOp>(builder.getUnknownLoc());
+    }
+
+    // Retrieve symbol reference of the state
+    auto stateSymbol = symbols.getSymbol(state);
+
+    // Retrieve state arguments, those were gathered earlier by 'CollectAdditionalParams'
+    std::vector<mlir::Value> argVals;
+    auto params = additionalParams.get(state);
+    std::transform(params.begin(), params.end(), std::back_inserter(argVals),
+                   [&](const IR::Declaration_Variable* decl) {
+                       BUG_CHECK(allocation.get(decl) == AllocType::STACK,
+                                 "Expected STACK allocation");
+                       return valuesTable.getAddr(decl);
+                   });
+
+    // Build TransitionOp
+    return builder.create<p4mlir::TransitionOp>(builder.getUnknownLoc(), stateSymbol, argVals);
+}
+
 bool MLIRGenImpl::preorder(const IR::P4Parser* parser) {
     // Build MLIR for the entire parser block
     auto* op = buildControlOrParser(parser);
@@ -850,6 +921,13 @@ bool MLIRGenImpl::preorder(const IR::P4Control* control) {
 }
 
 bool MLIRGenImpl::preorder(const IR::ParserState* state) {
+    // 'accept' and 'reject' states were synthesised just to make the type checking work.
+    // They are not actually needed in P4 dialect
+    if (state->getName() == IR::ParserState::accept ||
+        state->getName() == IR::ParserState::reject) {
+        return false;
+    }
+
     // Collect FunctionType of this state.
     // Contrary to P4, P4 dialect has state parameters.
     // Those are collected by 'CollectAdditionalParams' pass earlier
@@ -1046,7 +1124,7 @@ void MLIRGenImpl::genMLIRFromCFG(P4Block context, CFG cfg, mlir::Region& targetR
     // Terminate blocks which had no terminator in CFG.
     // If the block has 1 successor insert BranchOp.
     // For action: If the block has no successors insert ReturnOp.
-    // For state: TODO: If the block has no successors insert transition to reject.
+    // For state: If the block has no successors insert transition to reject.
     CFGWalker::preorder(cfg.getEntry(), [&](BasicBlock* bb) {
         BUG_CHECK(blocksTable.count(bb), "Could not retrive MLIR block");
         auto* block = blocksTable.at(bb);
@@ -1064,11 +1142,19 @@ void MLIRGenImpl::genMLIRFromCFG(P4Block context, CFG cfg, mlir::Region& targetR
             return;
         }
 
-        // Insert p4.return for actions and p4.transition for states
+        // Insert p4.return for actions
         if (context.isControl() || context.isEmpty()) {
             builder.create<p4mlir::ReturnOp>(loc);
+            return;
+        }
+
+        // For parser insert p4.parser_reject for states and transition to start for apply method
+        BUG_CHECK(context.isParser(), "Expected parser context");
+        bool inState = dyn_cast<p4mlir::StateOp>(targetRegion.getParentOp());
+        if (inState) {
+            builder.create<p4mlir::ParserRejectOp>(loc);
         } else {
-            // TODO:
+            buildTransitionOp(context.getStartState());
         }
     });
 

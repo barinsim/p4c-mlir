@@ -188,6 +188,37 @@ def StateOp : P4Op<"state", [Symbol, FunctionOpInterface, NoTerminator]> {
     }];
 }
 
+//def SelectTransitionOp : P4Op<"select_transition", [Terminator]> {
+//    let arguments = (ins AnyType:$selector);
+//    let regions = (region SizedRegion<1>:$body);
+//    //let hasCustomAssemblyFormat = 1;
+//}
+
+//def SelectTransitionCaseOp : P4Op<"select_transition_case"> {
+//    let arguments = (ins SymbolRefAttr:$state,
+//                       Variadic<AnyType>:$operands);
+//    //let hasCustomAssemblyFormat = 1;
+//}
+
+//def SelectTransitionKeysOp : P4Op<"select_transition_keys", [HasParent<"SelectTransitionCaseOp">]> {
+//    let regions = (region AnyRegion:$body);
+//    let assemblyFormat = "attr-dict regions";
+//}
+
+def TransitionOp : P4Op<"transition", [Terminator, DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
+    let arguments = (ins SymbolRefAttr:$state,
+                       Variadic<AnyType>:$opers);
+    let assemblyFormat = "attr-dict $state `(` $opers `)` `:` `(` qualified(type($opers)) `)`";
+}
+
+def ParserAcceptOp : P4Op<"parser_accept", [Terminator, ParentOneOf<["ApplyOp", "StateOp"]>]> {
+    let assemblyFormat = "attr-dict";
+}
+
+def ParserRejectOp : P4Op<"parser_reject", [Terminator, ParentOneOf<["ApplyOp", "StateOp"]>]> {
+    let assemblyFormat = "attr-dict";
+}
+
 def ExternOp : P4Op<"extern", [Symbol, FunctionOpInterface, Template]> {
     let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<FunctionType>:$function_type,
@@ -252,8 +283,7 @@ def ConstructorOp : P4Op<"constructor", [Symbol, FunctionOpInterface, Template]>
     }];
 }
 
-// TODO: NoTerminator
-def ApplyOp : P4Op<"apply", [ParentOneOf<["ControlOp", "ParserOp"]>, NoTerminator]> {
+def ApplyOp : P4Op<"apply", [ParentOneOf<["ControlOp", "ParserOp"]>]> {
     let regions = (region MinSizedRegion<1>:$body);
     let assemblyFormat = "attr-dict regions";
 }
