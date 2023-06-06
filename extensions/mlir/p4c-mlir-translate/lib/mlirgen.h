@@ -221,6 +221,8 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
     // --- Terminators ---
     void postorder(const IR::ReturnStatement* ret) override;
     bool preorder(const IR::IfStatement* ifStmt) override;
+    bool preorder(const IR::SelectExpression* se) override;
+    bool preorder(const IR::SelectCase* c) override;
 
  private:
     // Returns MLIR counterpart of the P4 BasicBlock

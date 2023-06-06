@@ -188,22 +188,20 @@ def StateOp : P4Op<"state", [Symbol, FunctionOpInterface, NoTerminator]> {
     }];
 }
 
-//def SelectTransitionOp : P4Op<"select_transition", [Terminator]> {
-//    let arguments = (ins AnyType:$selector);
-//    let regions = (region SizedRegion<1>:$body);
-//    //let hasCustomAssemblyFormat = 1;
-//}
+def SelectTransitionOp : P4Op<"select_transition", [Terminator, NoTerminator]> {
+    let arguments = (ins AnyType:$selector);
+    let regions = (region SizedRegion<1>:$body);
+    //let hasCustomAssemblyFormat = 1;
+}
 
-//def SelectTransitionCaseOp : P4Op<"select_transition_case"> {
-//    let arguments = (ins SymbolRefAttr:$state,
-//                       Variadic<AnyType>:$operands);
-//    //let hasCustomAssemblyFormat = 1;
-//}
+def SelectTransitionCaseOp : P4Op<"select_transition_case"> {
+    let regions = (region SizedRegion<1>:$body);
+}
 
-//def SelectTransitionKeysOp : P4Op<"select_transition_keys", [HasParent<"SelectTransitionCaseOp">]> {
-//    let regions = (region AnyRegion:$body);
-//    let assemblyFormat = "attr-dict regions";
-//}
+def SelectTransitionKeysOp : P4Op<"select_transition_keys", [HasParent<"SelectTransitionCaseOp">]> {
+    let regions = (region AnyRegion:$body);
+    let assemblyFormat = "attr-dict regions";
+}
 
 def TransitionOp : P4Op<"transition", [Terminator, DeclareOpInterfaceMethods<SymbolUserOpInterface>]> {
     let arguments = (ins SymbolRefAttr:$state,
@@ -215,8 +213,16 @@ def ParserAcceptOp : P4Op<"parser_accept", [Terminator, ParentOneOf<["ApplyOp", 
     let assemblyFormat = "attr-dict";
 }
 
-def ParserRejectOp : P4Op<"parser_reject", [Terminator, ParentOneOf<["ApplyOp", "StateOp"]>]> {
-    let assemblyFormat = "attr-dict";
+def ParserRejectOp : P4Op<"parser_reject", [Terminator, ParentOneOf<["ApplyOp", "StateOp", "SelectTransitionCaseOp"]>]> {
+    let arguments = (ins OptionalAttr<SymbolRefAttr>:$error);
+    let assemblyFormat = "attr-dict ($error^)?";
+
+    let builders = [
+        // Convenience builder without an error
+        OpBuilder<(ins), [{
+            build($_builder, $_state, {});
+        }]>
+    ];
 }
 
 def ExternOp : P4Op<"extern", [Symbol, FunctionOpInterface, Template]> {
@@ -348,7 +354,7 @@ def MemberDeclOp : P4Op<"member_decl", [Symbol]> {
     let assemblyFormat = "attr-dict $sym_name `:` $type ($initializer^)?";
 }
 
-def InitOp : P4Op<"init", [Terminator, ParentOneOf<["MemberDeclOp", "TablePropertyOp", "TableKeyOp", "TableEntryKeysOp"]>]> {
+def InitOp : P4Op<"init", [Terminator, ParentOneOf<["MemberDeclOp", "TablePropertyOp", "TableKeyOp", "TableEntryKeysOp", "SelectTransitionKeysOp"]>]> {
     let arguments = (ins OptionalAttr<SymbolRefAttr>:$callee, Variadic<AnyType>:$opers, TypeAttr:$type);
     let assemblyFormat = "attr-dict ($callee^)? $type ` ` `(` operands `)` `:` `(` type(operands) `)`";
 

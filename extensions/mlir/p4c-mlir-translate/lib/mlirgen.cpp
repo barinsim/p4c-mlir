@@ -813,6 +813,11 @@ bool MLIRGenImplCFG::preorder(const IR::IfStatement* ifStmt) {
     return false;
 }
 
+bool MLIRGenImplCFG::preorder(const IR::SelectExpression* selectExpr) {
+    buildTransitionOp(selectExpr);
+    return false;
+}
+
 mlir::Block* MLIRGenImplCFG::getMLIRBlock(const BasicBlock* p4block) const {
     BUG_CHECK(blocksTable.count(p4block), "Could not retrieve corresponding MLIR block");
     return blocksTable.at(p4block);
@@ -872,6 +877,50 @@ mlir::Operation* MLIRGenImplCFG::buildTransitionOp(
         auto transOp = builder.create<p4mlir::TransitionOp>(loc(builder, pe), stateSymbol, argVals);
         return transOp;
     }
+
+    BUG_CHECK(std::holds_alternative<const IR::SelectExpression*>(node), "Unexpected expression");
+    auto* selectExpr = std::get<const IR::SelectExpression*>(node);
+
+    // Generate selector
+    visit(selectExpr->select);
+
+    // Create SelectTransitionOp and insert 1 block
+    mlir::Value selectorVal = valuesTable.getUnchecked(selectExpr->select);
+    auto selectOp =
+        builder.create<p4mlir::SelectTransitionOp>(loc(builder, selectExpr), selectorVal);
+    auto& body = selectOp.getBody().emplaceBlock();
+    builder.setInsertionPointToEnd(&body);
+
+    // Generate the cases
+    visit(selectExpr->selectCases);
+
+    builder.setInsertionPointAfter(selectOp);
+    return selectOp;
+}
+
+bool MLIRGenImplCFG::preorder(const IR::SelectCase* c) {
+    // Create SelectTransitionCaseOp and insert 1 block
+    auto caseOp = builder.create<p4mlir::SelectTransitionCaseOp>(loc(builder, c));
+    auto& body = caseOp.getBody().emplaceBlock();
+    builder.setInsertionPointToEnd(&body);
+
+    // Create SelectTransitionKeysOp and insert 1 block
+    auto keysOp = builder.create<p4mlir::SelectTransitionKeysOp>(loc(builder, c));
+    auto& keysBody = keysOp.getBody().emplaceBlock();
+    builder.setInsertionPointToEnd(&keysBody);
+
+    // Generate ops for the keyset and pass the value into InitOp
+    visit(c->keyset);
+    auto keysVal = valuesTable.get(c->keyset);
+    auto keysType = toMLIRType(typeMap->getType(c->keyset, true));
+    builder.create<p4mlir::InitOp>(loc(builder, c->keyset), keysVal, keysType);
+
+    // Generate the transition
+    builder.setInsertionPointAfter(keysOp);
+    visit(c->state);
+
+    builder.setInsertionPointAfter(caseOp);
+    return false;
 }
 
 mlir::Operation* MLIRGenImpl::buildTransitionOp(const IR::ParserState* state) {
