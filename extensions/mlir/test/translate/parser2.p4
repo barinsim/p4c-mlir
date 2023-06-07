@@ -1,5 +1,14 @@
 // RUN: p4c-mlir-translate %s | FileCheck %s
 
+error {
+    NoError,
+    PacketTooShort,
+    NoMatch,
+    StackOutOfBounds,
+    HeaderTooShort,
+    ParserTimeout
+}
+
 extern packet_in {
     void extract<T>(out T hdr);
     void extract<T>(out T variableSizeHeader,
@@ -59,6 +68,12 @@ parser TopParser(packet_in b, in int<32> arg1, inout int<32> arg2) {
 // TODO: If no label matches, the execution triggers a runtime error with the standard error code error.NoMatch.
 
 // CHECK: module {
+// CHECK-NEXT:   p4.error @NoError
+// CHECK-NEXT:   p4.error @PacketTooShort
+// CHECK-NEXT:   p4.error @NoMatch
+// CHECK-NEXT:   p4.error @StackOutOfBounds
+// CHECK-NEXT:   p4.error @HeaderTooShort
+// CHECK-NEXT:   p4.error @ParserTimeout
 // CHECK-NEXT:   p4.extern_class @packet_in {
 // CHECK-NEXT:     p4.extern @extract_1<@T>(!p4.ref<!p4.type_var<@T>>)
 // CHECK-NEXT:     p4.extern @extract_2<@T>(!p4.ref<!p4.type_var<@T>>, ui32)
@@ -155,7 +170,7 @@ parser TopParser(packet_in b, in int<32> arg1, inout int<32> arg2) {
 // CHECK-NEXT:           p4.transition @TopParser::@foo3(%arg3, %arg4) : (!p4.ref<ui32>, !p4.ref<i1>)
 // CHECK-NEXT:         }
 // CHECK-NEXT:         p4.select_transition_default_case {
-// CHECK-NEXT:           p4.parser_reject
+// CHECK-NEXT:           p4.parser_reject with error @NoMatch
 // CHECK-NEXT:         }
 // CHECK-NEXT:       }
 // CHECK-NEXT:     }

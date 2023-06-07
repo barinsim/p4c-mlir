@@ -315,6 +315,7 @@ class MLIRGenImpl : public Inspector
     bool preorder(const IR::KeyElement* key) override;
     bool preorder(const IR::ExpressionListValue* exprList) override;
     bool preorder(const IR::Declaration_MatchKind* matchKinds) override;
+    bool preorder(const IR::Type_Error* error) override;
 
     // Generates MLIR for CFG of 'decl', MLIR blocks are inserted into 'targetRegion'.
     // CFG must be accessible through `cfg['decl']`

@@ -51,14 +51,25 @@ mlir::ModuleOp getParentModule(Operation* from) {
 } // namespace
 
 mlir::LogicalResult ConstantOp::verify() {
-    if (getValueAttr().getType() == getResult().getType()) {
+    if (auto intAttr = dyn_cast<IntegerAttr>(getValueAttr())) {
+        auto type = intAttr.getType();
+        if (type != getResult().getType()) {
+            return emitOpError("attribute and result must have the same type");
+        }
         return mlir::success();
     }
-    return mlir::emitError(
-        getLoc(),
-        "'p4.constant' op "
-        "attribute 'value' failed to satisfy constraint: Attribute and result value "
-        "must have a same type");
+    if (auto symbolAttr = dyn_cast<SymbolRefAttr>(getValueAttr())) {
+        auto resType = getResult().getType();
+        mlir::LogicalResult result =
+            llvm::TypeSwitch<mlir::Type, mlir::LogicalResult>(resType)
+                .Case([](p4mlir::ErrorType) { return mlir::success(); })
+                .Default([&](mlir::Type) {
+                    return emitOpError(
+                        "symbol reference attributes must have result of type ErrorType");
+                });
+        return result;
+    }
+    return emitOpError("value attribute must be IntegerAttr or SymbolRefAttr");
 }
 
 mlir::ParseResult ConstantOp::parse(mlir::OpAsmParser &parser, mlir::OperationState &result) {

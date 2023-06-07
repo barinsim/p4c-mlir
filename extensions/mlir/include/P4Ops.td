@@ -18,8 +18,8 @@ def Template : NativeOpTrait<"Template"> {
 
 def ConstantOp : P4Op<"constant"> {
     // TODO: for some reason these must be prefixed with Builtin_
-    let arguments = (ins Builtin_IntegerAttr:$value);
-    let results = (outs Builtin_Integer:$result);
+    let arguments = (ins AnyAttr:$value);
+    let results = (outs AnyType:$result);
 
     let hasVerifier = 1;
     let hasCustomAssemblyFormat = 1;
@@ -133,6 +133,11 @@ def MatchKindOp : P4Op<"match_kind", [Symbol]> {
     let assemblyFormat = "attr-dict $sym_name";
 }
 
+def ErrorOp : P4Op<"error", [Symbol]> {
+    let arguments = (ins SymbolNameAttr:$sym_name);
+    let assemblyFormat = "attr-dict $sym_name";
+}
+
 def ActionOp : P4Op<"action", [Symbol, FunctionOpInterface]> {
     let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<FunctionType>:$function_type,
@@ -222,7 +227,7 @@ def ParserAcceptOp : P4Op<"parser_accept", [Terminator, ParentOneOf<["ApplyOp", 
 
 def ParserRejectOp : P4Op<"parser_reject", [Terminator, ParentOneOf<["ApplyOp", "StateOp", "SelectTransitionCaseOp", "SelectTransitionDefaultCaseOp"]>]> {
     let arguments = (ins OptionalAttr<SymbolRefAttr>:$error);
-    let assemblyFormat = "attr-dict ($error^)?";
+    let assemblyFormat = "attr-dict (`with` `error` $error^)?";
 
     let builders = [
         // Convenience builder without an error
@@ -438,6 +443,8 @@ def TableType : P4Dialect_Type<"Table", "table"> {
     let parameters = (ins StringRefParameter<"Table type name">:$name);
     let assemblyFormat = "`<` $name `>`";
 }
+
+def ErrorType : P4Dialect_Type<"Error", "error"> {}
 
 def DontcareType : P4Dialect_Type<"Dontcare", "dontcare"> {}
 

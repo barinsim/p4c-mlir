@@ -217,6 +217,11 @@ class TypeConvertorVisitor : public Inspector
         return setOutput(type);
     }
 
+    bool preorder(const IR::Type_Error* error) override {
+        auto type = p4mlir::ErrorType::get(builder.getContext());
+        return setOutput(type);
+    }
+
     // Sets output of this visitor.
     // Returns false for convenient use at the end of preorder method
     bool setOutput(mlir::Type type) {
@@ -912,9 +917,9 @@ p4mlir::SelectTransitionDefaultCaseOp MLIRGenImplCFG::buildImplicitDefaultTransi
     auto& body = caseOp.getBody().emplaceBlock();
     builder.setInsertionPointToEnd(&body);
 
-    // Generate the transition
-    // TODO: add the NoMatch error
-    builder.create<p4mlir::ParserRejectOp>(builder.getUnknownLoc());
+    // Generate the transition which sets error.NoMatch
+    auto noMatchSymbol = mlir::SymbolRefAttr::get(builder.getStringAttr("NoMatch"));
+    builder.create<p4mlir::ParserRejectOp>(builder.getUnknownLoc(), noMatchSymbol);
 
     builder.setInsertionPointAfter(caseOp);
     return caseOp;
@@ -1702,6 +1707,15 @@ bool MLIRGenImpl::preorder(const IR::Declaration_MatchKind* matchKinds) {
     std::for_each(elems.begin(), elems.end(), [&](const IR::Declaration_ID* decl) {
         llvm::StringRef name = decl->getName().toString().c_str();
         builder.create<p4mlir::MatchKindOp>(loc(builder, decl), name);
+    });
+    return false;
+}
+
+bool MLIRGenImpl::preorder(const IR::Type_Error* error) {
+    auto& elems = error->members;
+    std::for_each(elems.begin(), elems.end(), [&](const IR::Declaration_ID* decl) {
+        llvm::StringRef name = decl->getName().toString().c_str();
+        builder.create<p4mlir::ErrorOp>(loc(builder, decl), name);
     });
     return false;
 }
