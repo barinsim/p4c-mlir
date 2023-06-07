@@ -243,6 +243,9 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
     // unconditional transition
     mlir::Operation* buildTransitionOp(
         std::variant<const IR::SelectExpression*, const IR::PathExpression*> node);
+
+    // Builds SelectTransitionDefaultCaseOp op with a transition to reject with NoMatch error
+    p4mlir::SelectTransitionDefaultCaseOp buildImplicitDefaultTransition();
 };
 
 // Visitor converting valid P4 AST into P4 MLIR dialect

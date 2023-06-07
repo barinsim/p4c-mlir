@@ -87,6 +87,7 @@ def TupleOp : P4Op<"tuple"> {
     let assemblyFormat = "attr-dict `(` operands `)` `:` functional-type(operands, results)";
 }
 
+// TODO: instead of this we can probably just use p4.uninitialized
 def DontcareOp : P4Op<"dontcare"> {
     let arguments = (ins TypeAttr:$type);
     let results = (outs AnyType:$result);
@@ -191,11 +192,17 @@ def StateOp : P4Op<"state", [Symbol, FunctionOpInterface, NoTerminator]> {
 def SelectTransitionOp : P4Op<"select_transition", [Terminator, NoTerminator]> {
     let arguments = (ins AnyType:$selector);
     let regions = (region SizedRegion<1>:$body);
-    //let hasCustomAssemblyFormat = 1;
+    let assemblyFormat = "attr-dict $selector `:` qualified(type(operands)) regions";
 }
 
 def SelectTransitionCaseOp : P4Op<"select_transition_case"> {
     let regions = (region SizedRegion<1>:$body);
+    let assemblyFormat = "attr-dict regions";
+}
+
+def SelectTransitionDefaultCaseOp : P4Op<"select_transition_default_case"> {
+    let regions = (region SizedRegion<1>:$body);
+    let assemblyFormat = "attr-dict regions";
 }
 
 def SelectTransitionKeysOp : P4Op<"select_transition_keys", [HasParent<"SelectTransitionCaseOp">]> {
@@ -209,11 +216,11 @@ def TransitionOp : P4Op<"transition", [Terminator, DeclareOpInterfaceMethods<Sym
     let assemblyFormat = "attr-dict $state `(` $opers `)` `:` `(` qualified(type($opers)) `)`";
 }
 
-def ParserAcceptOp : P4Op<"parser_accept", [Terminator, ParentOneOf<["ApplyOp", "StateOp"]>]> {
+def ParserAcceptOp : P4Op<"parser_accept", [Terminator, ParentOneOf<["ApplyOp", "StateOp", "SelectTransitionCaseOp", "SelectTransitionDefaultCaseOp"]>]> {
     let assemblyFormat = "attr-dict";
 }
 
-def ParserRejectOp : P4Op<"parser_reject", [Terminator, ParentOneOf<["ApplyOp", "StateOp", "SelectTransitionCaseOp"]>]> {
+def ParserRejectOp : P4Op<"parser_reject", [Terminator, ParentOneOf<["ApplyOp", "StateOp", "SelectTransitionCaseOp", "SelectTransitionDefaultCaseOp"]>]> {
     let arguments = (ins OptionalAttr<SymbolRefAttr>:$error);
     let assemblyFormat = "attr-dict ($error^)?";
 

@@ -894,12 +894,45 @@ mlir::Operation* MLIRGenImplCFG::buildTransitionOp(
     // Generate the cases
     visit(selectExpr->selectCases);
 
+    // If no SelectTransitionDefaultCaseOp was generated, we synthesize one
+    bool hasDefaultCase = std::any_of(body.begin(), body.end(), [](const mlir::Operation& op) {
+        return dyn_cast<p4mlir::SelectTransitionDefaultCaseOp>(op);
+    });
+    if (!hasDefaultCase) {
+        buildImplicitDefaultTransition();
+    }
+
     builder.setInsertionPointAfter(selectOp);
     return selectOp;
 }
 
+p4mlir::SelectTransitionDefaultCaseOp MLIRGenImplCFG::buildImplicitDefaultTransition() {
+    // Create SelectTransitionCaseDefaultOp and insert 1 block
+    auto caseOp = builder.create<p4mlir::SelectTransitionDefaultCaseOp>(builder.getUnknownLoc());
+    auto& body = caseOp.getBody().emplaceBlock();
+    builder.setInsertionPointToEnd(&body);
+
+    // Generate the transition
+    // TODO: add the NoMatch error
+    builder.create<p4mlir::ParserRejectOp>(builder.getUnknownLoc());
+
+    builder.setInsertionPointAfter(caseOp);
+    return caseOp;
+}
+
 bool MLIRGenImplCFG::preorder(const IR::SelectCase* c) {
-    // Create SelectTransitionCaseOp and insert 1 block
+    // Default case has no keys and a different op
+    auto keysType = toMLIRType(typeMap->getType(c->keyset, true));
+    if (keysType.isa<p4mlir::DontcareType>()) {
+        auto caseOp = builder.create<p4mlir::SelectTransitionDefaultCaseOp>(loc(builder, c));
+        auto& body = caseOp.getBody().emplaceBlock();
+        builder.setInsertionPointToEnd(&body);
+        visit(c->state);
+        builder.setInsertionPointAfter(caseOp);
+        return false;
+    }
+
+    // Otherwise create SelectTransitionCaseOp and insert 1 block
     auto caseOp = builder.create<p4mlir::SelectTransitionCaseOp>(loc(builder, c));
     auto& body = caseOp.getBody().emplaceBlock();
     builder.setInsertionPointToEnd(&body);
@@ -912,7 +945,6 @@ bool MLIRGenImplCFG::preorder(const IR::SelectCase* c) {
     // Generate ops for the keyset and pass the value into InitOp
     visit(c->keyset);
     auto keysVal = valuesTable.get(c->keyset);
-    auto keysType = toMLIRType(typeMap->getType(c->keyset, true));
     builder.create<p4mlir::InitOp>(loc(builder, c->keyset), keysVal, keysType);
 
     // Generate the transition
