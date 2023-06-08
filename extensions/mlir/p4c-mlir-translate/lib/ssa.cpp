@@ -22,7 +22,8 @@ bool isPrimitiveType(const IR::Type *type) {
     CHECK_NULL(type);
     return type->is<IR::Type::Bits>() || type->is<IR::Type::Varbits>() ||
            type->is<IR::Type::Boolean>() || type->is<IR::Type_StructLike>() ||
-           type->is<IR::Type_BaseList>();
+           type->is<IR::Type_BaseList>() || type->is<IR::Type_Enum>() ||
+           type->is<IR::Type_Error>();
 }
 
 bool GatherAllocatableVariables::preorder(const IR::Declaration_Instance* decl) {
@@ -106,7 +107,8 @@ void AllocateVariables::end_apply(const IR::Node *node) {
         AllocType allocType = allocation.get(decl);
 
         if (type->is<IR::Type_Bits>() || type->is<IR::Type_StructLike>() ||
-            type->is<IR::Type_Boolean>() || type->is<IR::Type_BaseList>()) {
+            type->is<IR::Type_Boolean>() || type->is<IR::Type_BaseList>() ||
+            type->is<IR::Type_Error>() || type->is<IR::Type_Enum>()) {
             BUG_CHECK(allocType == AllocType::REG ||
                       allocType == AllocType::STACK ||
                       allocType == AllocType::CONSTANT_MEMBER,

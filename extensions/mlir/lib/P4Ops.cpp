@@ -85,7 +85,9 @@ mlir::ParseResult ConstantOp::parse(mlir::OpAsmParser &parser, mlir::OperationSt
 void ConstantOp::print(mlir::OpAsmPrinter &printer) {
     printer << " ";
     printer.printOptionalAttrDict((*this)->getAttrs(), {"value"});
-    printer << getValue();
+    printer.printAttributeWithoutType(getValue());
+    printer << " : ";
+    printer.printType(getResult().getType());
 }
 
 mlir::ParseResult ControlPlaneValueOp::parse(mlir::OpAsmParser &parser,

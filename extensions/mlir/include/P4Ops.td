@@ -17,7 +17,6 @@ def Template : NativeOpTrait<"Template"> {
 }
 
 def ConstantOp : P4Op<"constant"> {
-    // TODO: for some reason these must be prefixed with Builtin_
     let arguments = (ins AnyAttr:$value);
     let results = (outs AnyType:$result);
 
@@ -338,7 +337,7 @@ def CompareOpKindAttr: I32EnumAttr<
 }
 
 def CompareOp : P4Op<"cmp", [Pure, SameTypeOperands]> {
-    let arguments = (ins CompareOpKindAttr:$kind, Builtin_Integer:$lhs, Builtin_Integer:$rhs);
+    let arguments = (ins CompareOpKindAttr:$kind, AnyType:$lhs, AnyType:$rhs);
     let results = (outs I1:$result);
     let assemblyFormat = "attr-dict `(` $lhs `,` $rhs `)` $kind  `:` `(` type($lhs) `,` type($rhs) `)` `->` type($result)";
 }

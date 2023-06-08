@@ -382,6 +382,19 @@ void MLIRGenImplCFG::postorder(const IR::Member* mem) {
         return;
     }
 
+    // Reference of an error or enum constant generates p4.constant
+    if (auto* typeExpr = mem->expr->to<IR::TypeNameExpression>()) {
+        auto* typeName = typeExpr->typeName->to<IR::Type_Name>();
+        CHECK_NULL(typeName, typeName->path);
+        auto* typeDecl = refMap->getDeclaration(typeName->path, true)->to<IR::ISimpleNamespace>();
+        auto* valueDecl = typeDecl->getDeclByName(mem->member)->to<IR::Declaration_ID>();
+        CHECK_NULL(valueDecl);
+        mlir::Value val = builder.create<p4mlir::ConstantOp>(
+            loc(builder, mem), toMLIRType(typeExpr->typeName), symbols.getSymbol(valueDecl));
+        valuesTable.add(mem, val);
+        return;
+    }
+
     mlir::Value baseValue = valuesTable.getUnchecked(mem->expr);
     auto type = toMLIRType(p4type);
     auto name = builder.getStringAttr(mem->member.toString().c_str());
