@@ -444,6 +444,11 @@ def TableType : P4Dialect_Type<"Table", "table"> {
     let assemblyFormat = "`<` $name `>`";
 }
 
+def SetType : P4Dialect_Type<"Set", "set"> {
+    let parameters = (ins "mlir::Type":$type);
+    let assemblyFormat = "`<` qualified($type) `>`";
+}
+
 def ErrorType : P4Dialect_Type<"Error", "error"> {}
 
 def DontcareType : P4Dialect_Type<"Dontcare", "dontcare"> {}
@@ -540,6 +545,46 @@ def CallApplyOp : P4Op<"call_apply"> {
     let arguments = (ins RefType:$base, Variadic<AnyType>:$opers);
     let results = (outs);
     let assemblyFormat = "$base ` ` `(` $opers `)` attr-dict `:` functional-type(operands, results)";
+}
+
+def RangeOp : P4Op<"range"> {
+    let arguments = (ins Builtin_Integer:$lhs, Builtin_Integer:$rhs);
+    let results = (outs SetType:$result);
+    let assemblyFormat = "attr-dict `(` operands `)` `:` functional-type(operands, results)";
+
+    let builders = [
+        // SetType can be inferred from the operand types
+        OpBuilder<(ins "mlir::Value":$lhs, "mlir::Value":$rhs), [{
+            auto resType = p4mlir::SetType::get($_builder.getContext(), lhs.getType());
+            build($_builder, $_state, resType, lhs, rhs);
+        }]>
+    ];
+}
+
+def SetProductOp : P4Op<"set_product"> {
+    // TODO: Constraint to IntegerType or SetType
+    let arguments = (ins Variadic<AnyType>:$opers);
+    // TODO: Constraint to Set of tuples
+    let results = (outs SetType:$result);
+    let assemblyFormat = "attr-dict `(` operands `)` `:` functional-type(operands, results)";
+
+    let builders = [
+        // SetType can be inferred from the operand types
+        OpBuilder<(ins "mlir::ValueRange":$opers), [{
+            mlir::TypeRange types = opers.getTypes();
+            std::vector<mlir::Type> tupleInputTypes;
+            std::transform(types.begin(), types.end(), std::back_inserter(tupleInputTypes),
+                        [](mlir::Type type) {
+                             if (auto setType = dyn_cast<p4mlir::SetType>(type)) {
+                                 type = setType.getType();
+                             }
+                             return type;
+                        });
+            auto tupleType = $_builder.getTupleType(tupleInputTypes);
+            auto resType = p4mlir::SetType::get($_builder.getContext(), tupleType);
+            build($_builder, $_state, resType, opers);
+        }]>
+    ];
 }
 
 

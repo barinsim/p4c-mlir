@@ -65,8 +65,6 @@ parser TopParser(packet_in b, in int<32> arg1, inout int<32> arg2) {
     }
 }
 
-// TODO: If no label matches, the execution triggers a runtime error with the standard error code error.NoMatch.
-
 // CHECK: module {
 // CHECK-NEXT:   p4.error @NoError
 // CHECK-NEXT:   p4.error @PacketTooShort
@@ -89,14 +87,16 @@ parser TopParser(packet_in b, in int<32> arg1, inout int<32> arg2) {
 // CHECK-NEXT:       p4.select_transition %2 : tuple<si32> {
 // CHECK-NEXT:         p4.select_transition_case {
 // CHECK-NEXT:           p4.select_transition_keys {
-// CHECK-NEXT:             p4.init si32 (%arg1) : (si32)
+// CHECK-NEXT:             %3 = p4.range(%arg1, %arg1) : (si32, si32) -> !p4.set<si32>
+// CHECK-NEXT:             p4.init si32 (%3) : (!p4.set<si32>)
 // CHECK-NEXT:           }
 // CHECK-NEXT:           p4.transition @TopParser::@parse_ipv4(%arg3, %arg4) : (!p4.ref<ui32>, !p4.ref<i1>)
 // CHECK-NEXT:         }
 // CHECK-NEXT:         p4.select_transition_case {
 // CHECK-NEXT:           p4.select_transition_keys {
 // CHECK-NEXT:             %3 = p4.constant 7 : si32
-// CHECK-NEXT:             p4.init si32 (%3) : (si32)
+// CHECK-NEXT:             %4 = p4.range(%3, %3) : (si32, si32) -> !p4.set<si32>
+// CHECK-NEXT:             p4.init si32 (%4) : (!p4.set<si32>)
 // CHECK-NEXT:           }
 // CHECK-NEXT:           p4.parser_reject
 // CHECK-NEXT:         }
@@ -113,14 +113,16 @@ parser TopParser(packet_in b, in int<32> arg1, inout int<32> arg2) {
 // CHECK-NEXT:         p4.select_transition_case {
 // CHECK-NEXT:           p4.select_transition_keys {
 // CHECK-NEXT:             %3 = p4.constant 5 : si32
-// CHECK-NEXT:             p4.init si32 (%3) : (si32)
+// CHECK-NEXT:             %4 = p4.range(%3, %3) : (si32, si32) -> !p4.set<si32>
+// CHECK-NEXT:             p4.init si32 (%4) : (!p4.set<si32>)
 // CHECK-NEXT:           }
 // CHECK-NEXT:           p4.transition @TopParser::@parse_ipv4(%arg3, %arg4) : (!p4.ref<ui32>, !p4.ref<i1>)
 // CHECK-NEXT:         }
 // CHECK-NEXT:         p4.select_transition_case {
 // CHECK-NEXT:           p4.select_transition_keys {
 // CHECK-NEXT:             %3 = p4.constant 7 : si32
-// CHECK-NEXT:             p4.init si32 (%3) : (si32)
+// CHECK-NEXT:             %4 = p4.range(%3, %3) : (si32, si32) -> !p4.set<si32>
+// CHECK-NEXT:             p4.init si32 (%4) : (!p4.set<si32>)
 // CHECK-NEXT:           }
 // CHECK-NEXT:           p4.parser_reject
 // CHECK-NEXT:         }
@@ -137,35 +139,40 @@ parser TopParser(packet_in b, in int<32> arg1, inout int<32> arg2) {
 // CHECK-NEXT:         p4.select_transition_case {
 // CHECK-NEXT:           p4.select_transition_keys {
 // CHECK-NEXT:             %3 = p4.constant 0 : ui32
-// CHECK-NEXT:             p4.init ui32 (%3) : (ui32)
+// CHECK-NEXT:             %4 = p4.range(%3, %3) : (ui32, ui32) -> !p4.set<ui32>
+// CHECK-NEXT:             p4.init ui32 (%4) : (!p4.set<ui32>)
 // CHECK-NEXT:           }
 // CHECK-NEXT:           p4.transition @TopParser::@start(%arg3, %arg4) : (!p4.ref<ui32>, !p4.ref<i1>)
 // CHECK-NEXT:         }
 // CHECK-NEXT:         p4.select_transition_case {
 // CHECK-NEXT:           p4.select_transition_keys {
 // CHECK-NEXT:             %3 = p4.constant 1 : ui32
-// CHECK-NEXT:             p4.init ui32 (%3) : (ui32)
+// CHECK-NEXT:             %4 = p4.range(%3, %3) : (ui32, ui32) -> !p4.set<ui32>
+// CHECK-NEXT:             p4.init ui32 (%4) : (!p4.set<ui32>)
 // CHECK-NEXT:           }
 // CHECK-NEXT:           p4.transition @TopParser::@drop(%arg3, %arg4) : (!p4.ref<ui32>, !p4.ref<i1>)
 // CHECK-NEXT:         }
 // CHECK-NEXT:         p4.select_transition_case {
 // CHECK-NEXT:           p4.select_transition_keys {
 // CHECK-NEXT:             %3 = p4.constant 2 : ui32
-// CHECK-NEXT:             p4.init ui32 (%3) : (ui32)
+// CHECK-NEXT:             %4 = p4.range(%3, %3) : (ui32, ui32) -> !p4.set<ui32>
+// CHECK-NEXT:             p4.init ui32 (%4) : (!p4.set<ui32>)
 // CHECK-NEXT:           }
 // CHECK-NEXT:           p4.transition @TopParser::@foo1(%arg3, %arg4) : (!p4.ref<ui32>, !p4.ref<i1>)
 // CHECK-NEXT:         }
 // CHECK-NEXT:         p4.select_transition_case {
 // CHECK-NEXT:           p4.select_transition_keys {
 // CHECK-NEXT:             %3 = p4.constant 3 : ui32
-// CHECK-NEXT:             p4.init ui32 (%3) : (ui32)
+// CHECK-NEXT:             %4 = p4.range(%3, %3) : (ui32, ui32) -> !p4.set<ui32>
+// CHECK-NEXT:             p4.init ui32 (%4) : (!p4.set<ui32>)
 // CHECK-NEXT:           }
 // CHECK-NEXT:           p4.transition @TopParser::@foo2(%arg3, %arg4) : (!p4.ref<ui32>, !p4.ref<i1>)
 // CHECK-NEXT:         }
 // CHECK-NEXT:         p4.select_transition_case {
 // CHECK-NEXT:           p4.select_transition_keys {
 // CHECK-NEXT:             %3 = p4.constant 5 : ui32
-// CHECK-NEXT:             p4.init ui32 (%3) : (ui32)
+// CHECK-NEXT:             %4 = p4.range(%3, %3) : (ui32, ui32) -> !p4.set<ui32>
+// CHECK-NEXT:             p4.init ui32 (%4) : (!p4.set<ui32>)
 // CHECK-NEXT:           }
 // CHECK-NEXT:           p4.transition @TopParser::@foo3(%arg3, %arg4) : (!p4.ref<ui32>, !p4.ref<i1>)
 // CHECK-NEXT:         }
@@ -183,7 +190,8 @@ parser TopParser(packet_in b, in int<32> arg1, inout int<32> arg2) {
 // CHECK-NEXT:         p4.select_transition_case {
 // CHECK-NEXT:           p4.select_transition_keys {
 // CHECK-NEXT:             %4 = p4.constant false
-// CHECK-NEXT:             p4.init i1 (%4) : (i1)
+// CHECK-NEXT:             %5 = p4.range(%4, %4) : (i1, i1) -> !p4.set<i1>
+// CHECK-NEXT:             p4.init i1 (%5) : (!p4.set<i1>)
 // CHECK-NEXT:           }
 // CHECK-NEXT:           p4.parser_accept
 // CHECK-NEXT:         }
@@ -193,7 +201,8 @@ parser TopParser(packet_in b, in int<32> arg1, inout int<32> arg2) {
 // CHECK-NEXT:         p4.select_transition_case {
 // CHECK-NEXT:           p4.select_transition_keys {
 // CHECK-NEXT:             %4 = p4.constant true
-// CHECK-NEXT:             p4.init i1 (%4) : (i1)
+// CHECK-NEXT:             %5 = p4.range(%4, %4) : (i1, i1) -> !p4.set<i1>
+// CHECK-NEXT:             p4.init i1 (%5) : (!p4.set<i1>)
 // CHECK-NEXT:           }
 // CHECK-NEXT:           p4.transition @TopParser::@parse_ipv4(%arg3, %arg4) : (!p4.ref<ui32>, !p4.ref<i1>)
 // CHECK-NEXT:         }
@@ -224,4 +233,5 @@ parser TopParser(packet_in b, in int<32> arg1, inout int<32> arg2) {
 // CHECK-NEXT:     }
 // CHECK-NEXT:   }
 // CHECK-NEXT: }
+
 

@@ -196,6 +196,16 @@ class TypeConvertorVisitor : public Inspector
         auto& components = tuple->components;
         std::transform(components.begin(), components.end(), std::back_inserter(types),
                        [&](const IR::Type* p4type) { return convert(p4type); });
+
+        // If all inner types are p4mlir::DontcareType, we just return p4mlir::DontcareType instead
+        // of the tuple. It simplifies recognition of default cases in parser transitions
+        bool hasOnlyDontCare = std::all_of(types.begin(), types.end(), [](mlir::Type type) {
+            return type.isa<p4mlir::DontcareType>();
+        });
+        if (hasOnlyDontCare) {
+            return setOutput(p4mlir::DontcareType::get(builder.getContext()));
+        }
+
         auto type = builder.getTupleType(types);
         return setOutput(type);
     }
@@ -219,6 +229,12 @@ class TypeConvertorVisitor : public Inspector
 
     bool preorder(const IR::Type_Error* error) override {
         auto type = p4mlir::ErrorType::get(builder.getContext());
+        return setOutput(type);
+    }
+
+    bool preorder(const IR::Type_Set* set) override {
+        auto elemType = convert(set->elementType);
+        auto type = p4mlir::SetType::get(builder.getContext(), elemType);
         return setOutput(type);
     }
 
@@ -786,7 +802,17 @@ void MLIRGenImplCFG::postorder(const IR::ListExpression* listExpr) {
     std::transform(components.begin(), components.end(), std::back_inserter(values),
                    [&](const IR::Expression* expr) { return valuesTable.getUnchecked(expr); });
 
-    // Create TupleOp
+    // P4 standard defines a product operator, which takes multiple sets (or singleton sets) as
+    // input and returns a result of a set product operation, returning set of tuples. The AST does
+    // not have a dedicated product node, instead each ListExpression in the context of
+    // SelectCase is the product operation. In P4 dialect we generate explicit product op
+    if (findContext<IR::SelectCase>()) {
+        mlir::Value setVal = builder.create<p4mlir::SetProductOp>(loc(builder, listExpr), values);
+        valuesTable.add(listExpr, setVal);
+        return;
+    }
+
+    // Otherwise create TupleOp
     auto type = toMLIRType(typeMap->getType(listExpr, true));
     mlir::Value tupleVal = builder.create<p4mlir::TupleOp>(loc(builder, listExpr), type, values);
     valuesTable.add(listExpr, tupleVal);
@@ -804,6 +830,10 @@ void MLIRGenImplCFG::postorder(const IR::Add* add) { handleArithmeticOp<p4mlir::
 void MLIRGenImplCFG::postorder(const IR::Sub* sub) { handleArithmeticOp<p4mlir::SubOp>(sub); }
 
 void MLIRGenImplCFG::postorder(const IR::Mul* mul) { handleArithmeticOp<p4mlir::MulOp>(mul); }
+
+void MLIRGenImplCFG::postorder(const IR::Range* range) {
+    handleArithmeticOp<p4mlir::RangeOp>(range);
+}
 
 bool MLIRGenImplCFG::preorder(const IR::IfStatement* ifStmt) {
     CHECK_NULL(currBlock);
@@ -830,9 +860,6 @@ mlir::Block* MLIRGenImplCFG::getMLIRBlock(const BasicBlock* p4block) const {
 
 template <typename OpType>
 void MLIRGenImplCFG::handleArithmeticOp(const IR::Operation_Binary* arithOp) {
-    // Check that 'OpType' has 'SameOperandsAndResultType' trait
-    static_assert(OpType::template hasTrait<::mlir::OpTrait::SameOperandsAndResultType>());
-
     mlir::Value lValue = valuesTable.get(arithOp->left);
     mlir::Value rValue = valuesTable.get(arithOp->right);
 
@@ -947,9 +974,18 @@ bool MLIRGenImplCFG::preorder(const IR::SelectCase* c) {
     auto& keysBody = keysOp.getBody().emplaceBlock();
     builder.setInsertionPointToEnd(&keysBody);
 
-    // Generate ops for the keyset and pass the value into InitOp
+    // Generate ops for the keyset and pass the value into InitOp.
+    // The keyset must always be SetType. If keyset generation did not create one we synthesize one.
+    // e.g.:
+    // $1 = p4.constant 3
+    // ->
+    // $1 = p4.constant 3
+    // $2 = p4.range($1, $1)
     visit(c->keyset);
     auto keysVal = valuesTable.get(c->keyset);
+    if (!keysVal.getType().isa<p4mlir::SetType>()) {
+        keysVal = builder.create<p4mlir::RangeOp>(loc(builder, c->keyset), keysVal, keysVal);
+    }
     builder.create<p4mlir::InitOp>(loc(builder, c->keyset), keysVal, keysType);
 
     // Generate the transition
