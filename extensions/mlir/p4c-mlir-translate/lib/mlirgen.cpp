@@ -858,6 +858,16 @@ void MLIRGenImplCFG::postorder(const IR::Mask* mask) {
     handleArithmeticOp<p4mlir::MaskOp>(mask);
 }
 
+bool MLIRGenImplCFG::preorder(const IR::LOr* lOr) {
+    buildLogicalOp(lOr);
+    return false;
+}
+
+bool MLIRGenImplCFG::preorder(const IR::LAnd* lAnd) {
+    buildLogicalOp(lAnd);
+    return false;
+}
+
 bool MLIRGenImplCFG::preorder(const IR::IfStatement* ifStmt) {
     CHECK_NULL(currBlock);
     visit(ifStmt->condition);
@@ -973,6 +983,67 @@ p4mlir::SelectTransitionDefaultCaseOp MLIRGenImplCFG::buildImplicitDefaultTransi
 
     builder.setInsertionPointAfter(caseOp);
     return caseOp;
+}
+
+Operation* MLIRGenImplCFG::buildLogicalOp(const IR::Operation_Binary* binOp) {
+    // AST nodes for logical operators represent implicit control flow due to the short-circuiting
+    // semantics. We must create the MLIR basic blocks manually:
+    // expr1 || expr2
+    //
+    // ->
+    //
+    // $1 = expr1;
+    // $2 = constant true
+    // $3 = cmp ne ($1, $2)
+    // cond_br $3 bb^1 : bb^2($2)
+    //
+    // bb^1:
+    // $4 = expr2
+    // br bb^2($4)
+    //
+    // bb^2($5 : bool):
+    // $6 = copy($5)
+
+    BUG_CHECK(binOp->is<IR::LAnd>() || binOp->is<IR::LOr>(), "Expected LAnd or LOr");
+
+    auto loca = loc(builder, binOp);
+
+    // Create true (bb^1) and false (bb^2) blocks by splitting the current one
+    mlir::Block* tBlock = builder.getBlock()->splitBlock(builder.getBlock()->end());
+    mlir::Block* fBlock = tBlock->splitBlock(tBlock->end());
+    auto boolType = toMLIRType(IR::Type_Boolean::get());
+    fBlock->addArgument(boolType, loc(builder, binOp));
+
+    // Generate expr1
+    visit(binOp->left);
+    mlir::Value lhsVal = valuesTable.get(binOp->left);
+
+    // Now we generate the $2 = constant (see above).
+    // The only difference between generating && or || is this constant.
+    // 'true' for ||
+    // 'false' for &&
+    bool cst = binOp->is<IR::LOr>();
+    mlir::Value cstVal = builder.create<p4mlir::ConstantOp>(loca, boolType, (int64_t)cst);
+
+    // Generate the comparison and jump
+    mlir::Value flagVal =
+        builder.create<p4mlir::CompareOp>(loca, CompareOpKind::ne, lhsVal, cstVal);
+    mlir::ValueRange fArgs = {cstVal};
+    mlir::ValueRange tArgs = {};
+    builder.create<mlir::cf::CondBranchOp>(loca, flagVal, tBlock, tArgs, fBlock, fArgs);
+
+    // Generate expr2
+    builder.setInsertionPointToEnd(tBlock);
+    visit(binOp->right);
+    mlir::Value rhsVal = valuesTable.get(binOp->right);
+    builder.create<mlir::cf::BranchOp>(loc(builder, binOp), fBlock, mlir::ValueRange{rhsVal});
+
+    // The CopyOp is redundant but makes the MLIR nicer and the copy gets removed later
+    builder.setInsertionPointToEnd(fBlock);
+    auto val = builder.create<p4mlir::CopyOp>(loca, fBlock->getArgument(0));
+    valuesTable.add(binOp, val);
+
+    return val.getOperation();
 }
 
 bool MLIRGenImplCFG::preorder(const IR::SelectCase* c) {
@@ -1259,37 +1330,36 @@ void MLIRGenImpl::genMLIRFromCFG(P4Block context, CFG cfg, mlir::Region& targetR
     // Fill the MLIR Blocks with Ops
     auto* cfgMLIRGen = createCFGVisitor(selfValue);
     CFGWalker::preorder(cfg.getEntry(), [&](BasicBlock* bb) {
+        // Retrieve corresponding MLIR block
         BUG_CHECK(blocksTable.count(bb), "Could not retrieve MLIR block");
         auto* block = blocksTable.at(bb);
         builder.setInsertionPointToEnd(block);
+
+        // Generate ops. This is done using different visitor on per-statement basis
         auto& comps = bb->components;
         std::for_each(comps.begin(), comps.end(), [&](auto* node) { cfgMLIRGen->apply(node, bb); });
-    });
 
-    // Terminate blocks which had no terminator in CFG.
-    // If the block has 1 successor insert BranchOp.
-    // For action: If the block has no successors insert ReturnOp.
-    // For state: If the block has no successors insert transition to reject.
-    CFGWalker::preorder(cfg.getEntry(), [&](BasicBlock* bb) {
-        BUG_CHECK(blocksTable.count(bb), "Could not retrive MLIR block");
-        auto* block = blocksTable.at(bb);
+        // If the generated block is not terminated, generate correct terminator. We have to
+        // retrieve the current block from the builder since some expressions (logical operators)
+        // generate multiple blocks and the original block is no longer the last generated one
+        block = builder.getBlock();
         if (!block->empty() && block->back().hasTrait<mlir::OpTrait::IsTerminator>()) {
             return;
         }
         BUG_CHECK(bb->succs.size() <= 1, "Non-terminated block can have at most 1 successor");
-        builder.setInsertionPointToEnd(block);
-        auto loc = builder.getUnknownLoc();
+
+        // If the BasicBlock has 1 successor, generate unconditional jump
         if (bb->succs.size() == 1) {
             auto* succ = bb->succs.front();
             BUG_CHECK(blocksTable.count(succ), "Could not retrive MLIR block");
             auto args = createBlockArgs(ssaInfo, bb, succ, valuesTable);
-            builder.create<mlir::cf::BranchOp>(loc, blocksTable.at(succ), args);
+            builder.create<mlir::cf::BranchOp>(builder.getUnknownLoc(), blocksTable.at(succ), args);
             return;
         }
 
         // Insert p4.return for actions
         if (context.isControl() || context.isEmpty()) {
-            builder.create<p4mlir::ReturnOp>(loc);
+            builder.create<p4mlir::ReturnOp>(builder.getUnknownLoc());
             return;
         }
 
@@ -1297,7 +1367,7 @@ void MLIRGenImpl::genMLIRFromCFG(P4Block context, CFG cfg, mlir::Region& targetR
         BUG_CHECK(context.isParser(), "Expected parser context");
         bool inState = dyn_cast<p4mlir::StateOp>(targetRegion.getParentOp());
         if (inState) {
-            builder.create<p4mlir::ParserRejectOp>(loc);
+            builder.create<p4mlir::ParserRejectOp>(builder.getUnknownLoc());
         } else {
             buildTransitionOp(context.getStartState());
         }

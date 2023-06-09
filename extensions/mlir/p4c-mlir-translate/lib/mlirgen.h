@@ -220,6 +220,10 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
     void postorder(const IR::Range* range) override;
     void postorder(const IR::Mask* mask) override;
 
+    // --- Logical Operators ---
+    bool preorder(const IR::LOr* lor) override;
+    bool preorder(const IR::LAnd* land) override;
+
     // --- Terminators ---
     void postorder(const IR::ReturnStatement* ret) override;
     bool preorder(const IR::IfStatement* ifStmt) override;
@@ -248,6 +252,9 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
 
     // Builds SelectTransitionDefaultCaseOp op with a transition to reject with NoMatch error
     p4mlir::SelectTransitionDefaultCaseOp buildImplicitDefaultTransition();
+
+    // Builds MLIR for 'IR::LOr' or 'IR::LAnd'. Considers short-circuiting semantics
+    Operation* buildLogicalOp(const IR::Operation_Binary* binOp);
 };
 
 // Visitor converting valid P4 AST into P4 MLIR dialect
