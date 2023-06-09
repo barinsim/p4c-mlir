@@ -63,6 +63,7 @@ mlir::LogicalResult ConstantOp::verify() {
         mlir::LogicalResult result =
             llvm::TypeSwitch<mlir::Type, mlir::LogicalResult>(resType)
                 .Case([](p4mlir::ErrorType) { return mlir::success(); })
+                .Case([](p4mlir::EnumType) { return mlir::success(); })
                 .Default([&](mlir::Type) {
                     return emitOpError(
                         "symbol reference attributes must have result of type ErrorType");

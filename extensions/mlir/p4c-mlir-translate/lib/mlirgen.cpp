@@ -232,6 +232,12 @@ class TypeConvertorVisitor : public Inspector
         return setOutput(type);
     }
 
+    bool preorder(const IR::Type_Enum* enm) override {
+        llvm::StringRef name = enm->getName().toString().c_str();
+        auto type = p4mlir::EnumType::get(builder.getContext(), name);
+        return setOutput(type);
+    }
+
     bool preorder(const IR::Type_Set* set) override {
         auto elemType = convert(set->elementType);
         auto type = p4mlir::SetType::get(builder.getContext(), elemType);
@@ -1770,6 +1776,24 @@ bool MLIRGenImpl::preorder(const IR::Type_Error* error) {
         llvm::StringRef name = decl->getName().toString().c_str();
         builder.create<p4mlir::ErrorOp>(loc(builder, decl), name);
     });
+    return false;
+}
+
+bool MLIRGenImpl::preorder(const IR::Type_Enum* enm) {
+    // Create EnumOp and insert 1 block
+    llvm::StringRef name = enm->getName().toString().c_str();
+    auto enumOp = builder.create<p4mlir::EnumOp>(loc(builder, enm), name);
+    auto& body = enumOp.getBody().emplaceBlock();
+    builder.setInsertionPointToEnd(&body);
+
+    // Create EnumeratorOp for each member
+    auto& elems = enm->members;
+    std::for_each(elems.begin(), elems.end(), [&](const IR::Declaration_ID* decl) {
+        llvm::StringRef name = decl->getName().toString().c_str();
+        builder.create<p4mlir::EnumeratorOp>(loc(builder, decl), name);
+    });
+
+    builder.setInsertionPointAfter(enumOp);
     return false;
 }
 

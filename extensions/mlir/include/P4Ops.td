@@ -137,6 +137,17 @@ def ErrorOp : P4Op<"error", [Symbol]> {
     let assemblyFormat = "attr-dict $sym_name";
 }
 
+def EnumOp : P4Op<"enum", [Symbol, SymbolTable, NoTerminator]> {
+    let arguments = (ins SymbolNameAttr:$sym_name);
+    let regions = (region SizedRegion<1>:$body);
+    let assemblyFormat = "attr-dict $sym_name regions";
+}
+
+def EnumeratorOp : P4Op<"enumerator", [Symbol]> {
+    let arguments = (ins SymbolNameAttr:$sym_name);
+    let assemblyFormat = "attr-dict $sym_name";
+}
+
 def ActionOp : P4Op<"action", [Symbol, FunctionOpInterface]> {
     let arguments = (ins SymbolNameAttr:$sym_name,
                        TypeAttrOf<FunctionType>:$function_type,
@@ -449,6 +460,11 @@ def SetType : P4Dialect_Type<"Set", "set"> {
 }
 
 def ErrorType : P4Dialect_Type<"Error", "error"> {}
+
+def EnumType : P4Dialect_Type<"Enum", "enum"> {
+    let parameters = (ins StringRefParameter<"Enum type name">:$name);
+    let assemblyFormat = "`<` $name `>`";
+}
 
 def DontcareType : P4Dialect_Type<"Dontcare", "dontcare"> {}
 

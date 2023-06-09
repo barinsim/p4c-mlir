@@ -145,9 +145,10 @@ class P4Block {
 };
 
 // Represents all P4 constructs that can be referenced by an MLIR symbol within the P4 dialect
-using ReferenceableNode = std::variant<const IR::P4Action*, const IR::Method*, const IR::P4Control*,
-                                       const IR::Type_Extern*, const IR::Declaration_ID*,
-                                       const IR::ParserState*, const IR::P4Parser*>;
+using ReferenceableNode =
+    std::variant<const IR::P4Action*, const IR::Method*, const IR::P4Control*,
+                 const IR::Type_Extern*, const IR::Declaration_ID*, const IR::ParserState*,
+                 const IR::P4Parser*, const IR::Type_Enum*>;
 
 // Represents isolated parts of the fully qualified symbol
 using SymbolParts = std::vector<mlir::StringAttr>;
@@ -279,6 +280,14 @@ class MakeFullyQualifiedSymbols : public Inspector
     }
 
     void postorder(const IR::Type_Extern *) override { currentScope.pop_back(); }
+
+    bool preorder(const IR::Type_Enum* enm) override {
+        addToCurrentScope(enm);
+        symbols.add(enm, currentScope);
+        return true;
+    }
+
+    void postorder(const IR::Type_Enum *) override { currentScope.pop_back(); }
 
     bool preorder(const IR::Declaration_ID* declID) override {
         addToCurrentScope(declID);
