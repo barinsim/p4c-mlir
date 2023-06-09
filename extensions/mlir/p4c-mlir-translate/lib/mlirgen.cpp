@@ -848,6 +848,10 @@ void MLIRGenImplCFG::postorder(const IR::Range* range) {
     handleArithmeticOp<p4mlir::RangeOp>(range);
 }
 
+void MLIRGenImplCFG::postorder(const IR::Mask* mask) {
+    handleArithmeticOp<p4mlir::MaskOp>(mask);
+}
+
 bool MLIRGenImplCFG::preorder(const IR::IfStatement* ifStmt) {
     CHECK_NULL(currBlock);
     visit(ifStmt->condition);

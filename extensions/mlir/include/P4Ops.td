@@ -546,6 +546,21 @@ def CallApplyOp : P4Op<"call_apply"> {
     let assemblyFormat = "$base ` ` `(` $opers `)` attr-dict `:` functional-type(operands, results)";
 }
 
+def MaskOp : P4Op<"mask"> {
+    // TODO: allow unsigned integers only
+    let arguments = (ins Builtin_Integer:$lhs, Builtin_Integer:$rhs);
+    let results = (outs SetType:$result);
+    let assemblyFormat = "attr-dict `(` operands `)` `:` functional-type(operands, results)";
+
+    let builders = [
+        // SetType can be inferred from the operand types
+        OpBuilder<(ins "mlir::Value":$lhs, "mlir::Value":$rhs), [{
+                      auto resType = p4mlir::SetType::get($_builder.getContext(), lhs.getType());
+                      build($_builder, $_state, resType, lhs, rhs);
+                  }]>
+    ];
+}
+
 def RangeOp : P4Op<"range"> {
     let arguments = (ins Builtin_Integer:$lhs, Builtin_Integer:$rhs);
     let results = (outs SetType:$result);

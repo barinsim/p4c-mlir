@@ -218,6 +218,7 @@ class MLIRGenImplCFG : public Inspector, P4WriteContext
     void postorder(const IR::Sub* sub) override;
     void postorder(const IR::Mul* mul) override;
     void postorder(const IR::Range* range) override;
+    void postorder(const IR::Mask* mask) override;
 
     // --- Terminators ---
     void postorder(const IR::ReturnStatement* ret) override;
