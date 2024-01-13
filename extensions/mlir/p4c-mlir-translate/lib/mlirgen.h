@@ -369,7 +369,7 @@ class AddAcceptAndRejectStates : public Transform
 };
 
 // Main pass of the P4 AST -> P4 MLIR dialect translation
-class MLIRGen : public PassManager
+class MLIRGen : public ::PassManager
 {
  public:
     MLIRGen(mlir::OpBuilder& builder) {

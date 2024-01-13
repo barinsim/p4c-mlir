@@ -34,3 +34,5 @@ add_subdirectory(lib)
 add_subdirectory(test)
 #add_subdirectory(p4c-mlir-opt)
 add_subdirectory(p4c-mlir-translate)
+
+add_subdirectory(p4dialect-llvm-translate)
