@@ -41,3 +41,7 @@ build/
 
 # Bazel files
 bazel-*
+
+.idea
+.lit_test_times.txt
+cmake-build-*
