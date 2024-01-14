@@ -23,6 +23,8 @@
 #include "mlir/Support/MathExtras.h"
 #include "mlir/Transforms/DialectConversion.h"
 #include "mlir/Transforms/Passes.h"
+#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
+#include "mlir/Dialect/Arith/IR/Arith.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/TypeSwitch.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -32,13 +34,7 @@
 #include "llvm/Support/FormatVariadic.h"
 #include "P4Ops.h"
 #include "P4Dialect.h"
-#include "mlir/Dialect/LLVMIR/LLVMDialect.h"
-#include "P4DialectToLLVM.h.inc"
-
-
-void addP4DialectToLLVMRewrites(::mlir::RewritePatternSet& patterns) {
-    populateWithGenerated(patterns);
-}
+#include "P4DialectToLLVMPatterns.h"
 
 namespace {
 struct P4DialectToLLVMPass
@@ -46,20 +42,28 @@ struct P4DialectToLLVMPass
     MLIR_DEFINE_EXPLICIT_INTERNAL_INLINE_TYPE_ID(P4DialectToLLVMPass)
 
     void getDependentDialects(DialectRegistry &registry) const override {
-        registry.insert<mlir::LLVM::LLVMDialect>();
+        registry.insert<mlir::LLVM::LLVMDialect, mlir::arith::ArithDialect, p4mlir::P4Dialect>();
     }
     void runOnOperation() final;
+};
+
+struct P4DialectToLLVMTarget : public ConversionTarget {
+    P4DialectToLLVMTarget(MLIRContext &ctx) : ConversionTarget(ctx) {
+        addLegalDialect<mlir::LLVM::LLVMDialect, mlir::arith::ArithDialect>();
+    }
 };
 } // namespace
 
 void P4DialectToLLVMPass::runOnOperation() {
-    ConversionTarget target(getContext());
-
-    target.addLegalDialect<mlir::LLVM::LLVMDialect, p4mlir::P4Dialect>();
-    target.addIllegalOp<p4mlir::AddOp>();
+    P4DialectToLLVMTarget target(getContext());
 
     RewritePatternSet patterns(&getContext());
-    addP4DialectToLLVMRewrites(patterns);
+    P4DialectToLLVMTypeConverter typeConvertor(&getContext());
+
+    populateWithGenerated(patterns);
+    patterns.add<ConstantOpPattern>(typeConvertor, &getContext());
+    patterns.add<AddOpPattern>(typeConvertor, &getContext());
+
 
     if (failed(applyPartialConversion(getOperation(), target, std::move(patterns)))) {
         signalPassFailure();
@@ -69,3 +73,8 @@ void P4DialectToLLVMPass::runOnOperation() {
 std::unique_ptr<Pass> createP4DialectToLLVMPass() {
     return std::make_unique<P4DialectToLLVMPass>();
 }
+
+
+
+
+

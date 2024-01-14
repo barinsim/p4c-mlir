@@ -1,5 +1,5 @@
-set(LLVM_TARGET_DEFINITIONS include/P4DialectToLLVM.td)
-mlir_tablegen(include/P4DialectToLLVM.h.inc -gen-rewriters)
+set(LLVM_TARGET_DEFINITIONS include/P4DialectToLLVMPatterns.td)
+mlir_tablegen(include/P4DialectToLLVMPatterns.h.inc -gen-rewriters)
 add_public_tablegen_target(MLIRP4DialectToLLVMINCGEN)
 
 add_mlir_conversion_library(MLIRP4DialectToLLVM
